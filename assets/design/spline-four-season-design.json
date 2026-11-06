@@ -1,0 +1,47 @@
+{
+  "name": "慢慢·四季花藤隧道",
+  "splineFileId": "7a6f62f2-ff2a-45ac-bf89-983fbb897f7c",
+  "units": {"metersPerSplineUnit": 0.02, "upAxis": "Y", "travelAxis": "+Z"},
+  "structure": {
+    "moduleLengthM": 8, "totalLengthM": 32,
+    "archCenterlineHalfWidthM": 6.6, "archSpringHeightM": 3.8,
+    "archCenterlineCrownHeightM": 7.5, "timberRadiusM": 0.14,
+    "archZOffsetsM": [0.24, 4, 7.76],
+    "archCurve": {"thetaRange": [0, 3.141592653589793], "x": "6.6*cos(theta)", "y": "3.8+3.7*sin(theta)", "segments": 24},
+    "roadWidthM": 4.3,
+    "lowCentralClearance": {"halfWidthM": 5.8, "heightM": 3.8, "note": "Visual design clearance; no game collider or camera collision test was performed."},
+    "moduleOriginsM": [[0,0,0],[0,0,8],[0,0,16],[0,0,24]],
+    "reuse": "Each season is a named group. Existing vertices use world coordinates; subtract that season's Z origin in meters when rebuilding a local Three.js module. Foliage overlaps segment ends naturally by up to approximately 0.5 m."
+  },
+  "leafGeometry": {
+    "shape": "Curved lanceolate surface with raised midrib; not a triangle plane",
+    "longitudinalSegments": 6, "verticesPerRow": 3,
+    "addedCanopyLengthM": [0.28,0.76],
+    "halfWidthToLength": [0.22,0.35],
+    "normalizedCurve": {"uRange": [0,1], "width": "halfWidth*pow(sin(PI*u),0.85)", "height": "length*0.22*sin(PI*u)+u*u*length*tilt", "tiltRange": [-0.325,0.325], "midribLiftM": 0.036},
+    "yawRadians": [0,6.283185307179586],
+    "distribution": "Random positions on 17 longitudinal curved vine strands, with individually varied length, width and tilt",
+    "materials": {"doubleSided": true, "lighting": "Lambert", "alphaCutout": false},
+    "randomSeed": null,
+    "reproductionNote": "Scene placement used Spline rand(); parameters reproduce the design, not identical random placement."
+  },
+  "flowers": {
+    "flowersPerCluster": 3, "petalLobes": 5,
+    "outlineSamples": 15, "flowerRadiusM": [0.044,0.094],
+    "clusterApproxDiameterM": [0.2,0.4],
+    "stemDropM": [0.14,0.46],
+    "connection": "Thin pedicels join flower clusters to the vine canopy",
+    "distribution": "Irregular positions along the 17 vine strands; no regular hanging ornament grid"
+  },
+  "seasons": [
+    {"id":"spring","group":"Spring 8m module","zStartM":0,"leafColors":["#94B77B","#B3CD94","#799C67"],"flowerColors":["#F2B8CB","#FFF2E8"],"leafCount":1000,"flowerClusterCount":60,"canopyDensityRelativeToSummer":0.5435,"recommendedExposureMultiplier":1.0},
+    {"id":"summer","group":"Summer 8m module","zStartM":8,"leafColors":["#42664C","#648663","#829B70"],"flowerColors":["#E8EBCB","#C9DAB2"],"leafCount":1840,"flowerClusterCount":16,"canopyDensityRelativeToSummer":1.0,"recommendedExposureMultiplier":0.94},
+    {"id":"autumn","group":"Autumn 8m module","zStartM":16,"leafColors":["#C8A24E","#B86943","#9C6746"],"flowerColors":["#EBC47A","#BB674D"],"fruitColors":["#B96E49","#D7A45D"],"fruitCount":22,"leafCount":1110,"flowerClusterCount":36,"canopyDensityRelativeToSummer":0.6033,"recommendedExposureMultiplier":1.02},
+    {"id":"winter","group":"Winter 8m module","zStartM":24,"leafColors":["#C8D7D4","#E2E9E2","#AEBFB9"],"flowerColors":["#F6F8F0","#DDE7EC"],"vineColor":"#B1AFA4","leafCount":136,"flowerClusterCount":18,"canopyDensityRelativeToSummer":0.0739,"recommendedExposureMultiplier":1.06}
+  ],
+  "lighting": {
+    "actualSpline": {"background":"#E9EEE7","ambientColor":"#E6EEE9","ambientIntensity":0.9,"directionalColor":"#FFF1DA","directionalIntensity":0.65,"shadowRadius":6,"ambientOcclusion":true},
+    "threeJsRecommendations": {"toneMapping":"ACESFilmicToneMapping","baseExposure":1.0,"transitionLengthM":2,"transitionEasing":"smoothstep","note":"Season exposure multipliers and transition interpolation are integration suggestions, not implemented runtime behavior. Calibrate in the game's renderer."}
+  },
+  "verification": {"splineObjectCount":83,"meshCount":78,"seasonGroupCount":4,"liveOverviewFraming":"passed tool framing and hero checks","status":"Editable reference scene, not a playable game or production optimized game asset","glbExport":"Not available through the connected nonpublishing tools; no paid export or public publication performed","geometryExport":"Full geometry was not retrieved: the tool response omitted large read results. This JSON contains design parameters, not vertex buffers."}
+}

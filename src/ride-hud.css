@@ -1,0 +1,169 @@
+.ride-started {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100dvh;
+  background: #f4f3e5;
+}
+.ride-started > :is(header, .vignette, .corner-note) { display: none; }
+.ride-started #ride-ui { display: contents; }
+.ride-started #world {
+  grid-row: 2;
+  position: relative;
+  inset: auto;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+#ride-top {
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: max(6px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 6px max(12px, env(safe-area-inset-left));
+  border-bottom: 1px solid #dfe3d1;
+  z-index: 7;
+}
+#ride-top .journey { position: static; display: flex; align-items: baseline; gap: 12px; }
+#ride-top .journey strong { font-size: 23px; line-height: 1; }
+#ride-top #place-name { display: inline; letter-spacing: .4px; }
+#ride-tools { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+#ride-tools > :is(button, details) {
+  position: relative;
+  inset: auto;
+  transform: none;
+  z-index: auto;
+  min-width: 0;
+  min-height: 0;
+  width: auto;
+  padding: 7px 9px;
+  font-size: 11px;
+  letter-spacing: 0;
+  border: 0;
+  border-radius: 8px;
+  background: #e8ecdb;
+  box-shadow: none;
+}
+#ride-tools > details[open] {
+  z-index: 1;
+  overflow: visible;
+}
+#ride-tools summary { cursor: pointer; }
+#ride-tools .controls-guide p {
+  max-width: 230px;
+  margin: 5px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+#ride-tools .dev-preview-body,
+#ride-tools .memory-book > :not(summary) {
+  background: #faf9eb;
+}
+#ride-tools .dev-preview-body {
+  position: static;
+  width: min(250px, calc(100vw - 48px));
+  max-height: min(180px, 25dvh);
+  padding: 10px;
+  border-radius: 10px;
+}
+#ride-tools .memory-book[open] {
+  max-height: min(150px, 22dvh);
+  overflow: auto;
+}
+#ride-tools .memory-book p { margin: 8px 0; }
+
+#ride-bottom {
+  grid-row: 3;
+  position: relative;
+  min-width: 0;
+  padding: 4px max(8px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+  border-top: 1px solid #dfe3d1;
+}
+#ride-actions { display: grid; justify-items: center; gap: 3px; }
+#ride-cue {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+#ride-cue:not(:has(> :not([hidden]))) { display: none; }
+#ride-bottom #ride-cue > * {
+  position: static;
+  inset: auto;
+  transform: none;
+  width: auto;
+  max-width: 100%;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px 8px;
+  text-align: center;
+}
+#ride-cue :is(h2, p, span) {
+  margin: 0;
+  font: inherit;
+  letter-spacing: 0;
+  white-space: normal;
+}
+#ride-cue .animal-dialog > div { justify-content: center; gap: 4px; }
+#ride-cue .animal-dialog { font-size: 12px; line-height: 1.65; }
+#ride-cue button { display: inline-block; margin: 0; padding: 5px 9px; min-height: 34px; }
+
+#ride-bottom :is(.ride-modes, .controls, .mobile-controls) {
+  position: static;
+  inset: auto;
+  transform: none;
+  width: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+#ride-bottom .ride-modes button { padding: 6px 10px; }
+.ride-buttons { display: flex; justify-content: center; flex-wrap: wrap; gap: 3px 12px; }
+#ride-bottom .controls { gap: 1px; }
+#ride-bottom .controls button { min-height: 40px; padding: 4px 8px; }
+#ride-bottom .mobile-controls { gap: 8px; }
+#ride-bottom .mobile-controls button { width: 44px; height: 44px; }
+#ride-bottom.ride-paused #ride-actions { visibility: hidden; }
+#ride-bottom .pause-layer {
+  position: absolute;
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  backdrop-filter: none;
+  background: #f4f3e5;
+}
+
+@media (max-width: 700px) {
+  #ride-tools .controls-guide { display: none; }
+  #ride-top #place-name { display: none; }
+  #ride-top { justify-content: center; }
+  #ride-tools { justify-content: center; }
+  #ride-tools > :is(button, details) { padding: 6px 7px; }
+  #ride-bottom .controls button { font-size: 11px; padding-inline: 5px; }
+  #ride-bottom .mobile-controls { order: -1; }
+  #ride-cue .animal-dialog h2 { display: none; }
+}
+@media (max-width: 370px) {
+  #ride-bottom .controls button { font-size: 10px; }
+  #ride-bottom .controls button span { font-size: 14px; }
+}
+@media (max-height: 500px) and (max-width: 1000px) {
+  #ride-top { justify-content: space-between; }
+  #ride-bottom .mobile-controls { order: 0; }
+  #ride-actions { gap: 0; }
+  #ride-cue .animal-dialog p { font-size: 11px; line-height: 1.45; }
+}

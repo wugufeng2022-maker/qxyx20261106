@@ -1,24 +1,31 @@
-# Cozy Creek · 小溪
+# 慢慢 · 乡野骑行
 
-Single-file Three.js creek demo.  
-单文件 Three.js 小溪演示。
+用 Three.js r187 制作的浏览器骑行游戏。沿 10 公里乡间小路骑行，经过林荫、湖岸、村庄和果园。可以停下来等鸭群过路，也可以邀请小兔或小猫同行。
 
-Three.js **0.187.0** is loaded via CDN ([unpkg](https://unpkg.com/three@0.187.0/build/three.module.js)).  
-Three.js **0.187.0** 通过 CDN 加载（[unpkg](https://unpkg.com/three@0.187.0/build/three.module.js)）。
+## 本地运行
 
-## Run · 运行
+需要 Node.js 20.19+（20.x）或 22.12+。
 
-Open `index.html` in a browser, or serve this folder statically.  
-在浏览器中打开 `index.html`，或静态托管本目录。
-
-```bash
-python3 -m http.server
+```sh
+npm ci
+npm run dev
 ```
 
-## Controls · 操作
+打开终端打印的地址。用 `npm test` 跑测试，用 `npm run build` 生成可静态部署的 `dist/`。
 
-Desktop: drag to rotate, scroll to zoom.  
-桌面：拖动旋转，滚轮缩放。
+## 骑行
 
-Mobile: drag to rotate, pinch to zoom.  
-手机：单指拖动旋转，双指捏合缩放。
+- 点击「出发，去吹吹风」开始自动骑行。
+- 轻点 W / ↑ 或「加速」切换持续加速。按住 S / ↓ 刹车。用 A / ←、D / → 或鼠标转向。
+- 手机使用画面下方的触控按钮，支持时也可启用倾斜转向。
+- 用「换个视角」切换镜头，用空格或「暂停骑行」歇一会儿。
+- 开发模式的「场景跳转 DEV」可直接前往指定路段。绘画湖畔可用 `?previewAt=1123&previewPainting=1` 预览。
+
+## 修改游戏
+
+- `src/main.js` 管理骑行循环、镜头和界面。
+- `src/route.js` 与 `src/scenery.js` 定义路线、地形和环境。路线规划见 [10 公里路线设计](docs/NATURAL-WORLD-ROUTE-PLAN.md)。
+- `src/rider.js` 定义骑手和骑行动作。
+- `assets/bicycle/` 和 `assets/rider/` 包含可编辑的 Blender 工程以及游戏使用的模型数据。对应目录的 README 记录导出方式，`assets/` 中还保留了素材的来源和许可。
+
+协作时可从 `main` 新建分支，运行测试和构建后再提交 PR。
