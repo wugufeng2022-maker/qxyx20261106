@@ -303,7 +303,7 @@ function lakeShore(group,index) {
 export function createChunk(index) {
   const group = new THREE.Group();group.name = `Meadow_${index}`;
   const random = rng(index * 7177 + 51839);
-  const groundMesh=terrain(index);
+  const groundMesh=terrain(index);groundMesh.name='Meadow ground';
   groundMesh.receiveShadow=index*CHUNK_LENGTH<FOREST_RIDE.end&&(index+1)*CHUNK_LENGTH>FOREST_RIDE.start;
   group.add(groundMesh, ribbon(index, 0, 4.3, materials.road, .015));
   group.add(ribbon(index, -.71, .46, materials.track, .018), ribbon(index, .71, .46, materials.track, .018));

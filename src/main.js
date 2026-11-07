@@ -12,6 +12,7 @@ import { createDuckEvent, updateDuckEvent, canChooseDuckWait, chooseDuckWait, le
 import {createEncounterDirector,updateEncounterDirector} from './encounter-director.js';
 import {createArtistEvent,createArtist,updateArtist,inviteArtist,leaveArtist,canInviteArtist} from './artist.js';
 import {createPaintingWorld,paintingWeight,choosePainting,wantsPainting} from './painting.js';
+import {applyStarrySky,createStarryEvent,createStarryPainter,createStarryWorld,enterStarry,leaveStarry,skipStarry,STARRY,STARRY_LIGHT,starryBranchCenter,starryLaneGuide,starryRoadFrame,starrySurfaceY,starryView,updateStarry} from './starry-village.js';
 import {loadJourney,remember,unlockPainting,MEMORY_LABELS} from './journey.js';
 import {createRabbitEvent,inviteRabbit,updateRabbitEvent,createRabbitHome,RABBIT_HOME} from './rabbit-event.js';
 import {createRabbit} from './rabbit.js';
@@ -36,13 +37,14 @@ import {mountTiltSteering} from './tilt-steering.js';
 import { loadVegetation, updateVegetation, setPaintingVegetation } from './vegetation.js';
 
 const $ = id => document.getElementById(id);
-let preview={at:0,painting:false,natural:false,rabbit:false,cat:false};
+let preview={at:0,painting:false,natural:false,rabbit:false,cat:false,starry:false};
 let previewModule;
 const routeParams=new URLSearchParams(location.search);
 const rideEntry={
   creek:{at:5280,label:'出发，去溪边骑一段 →'},
   lake:{at:CLEAR_LAKE.rideStart,label:'出发，去清湖边骑一段 →'},
   forest:{at:FOREST_RIDE.rideStart,label:'出发，去森林里骑一段 →'},
+  starry:{at:STARRY.sight-8,label:'出发，去画家村路口 →'},
 };
 const ride=routeParams.get('ride');
 const entry=Object.hasOwn(rideEntry,ride)?rideEntry[ride]:null;
@@ -115,6 +117,7 @@ environment.position.y = 0; // Keep the original height of the lighting rig.
 const envTarget = pmrem.fromScene(environment, .04);scene.environment = envTarget.texture;scene.environmentIntensity = .38;
 environment.dispose();pmrem.dispose();
 const ambientLight = new THREE.HemisphereLight('#fff2d4', '#829363', 2.1);scene.add(ambientLight);
+const starryBackground=new THREE.Color(STARRY_LIGHT.background),starryHorizon=new THREE.Color(STARRY_LIGHT.horizon),starryAmbient=new THREE.Color(STARRY_LIGHT.ambient),starryGround=new THREE.Color(STARRY_LIGHT.ground),starryMoonColor=new THREE.Color(STARRY_LIGHT.moon),starryMoon=new THREE.Vector3(),starryAhead=new THREE.Vector3();
 const sun = new THREE.DirectionalLight('#fff0ce', 3);sun.position.set(-30, 45, -25);sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);sun.shadow.camera.left = -24;sun.shadow.camera.right = 24;sun.shadow.camera.top = 24;sun.shadow.camera.bottom = -24;sun.shadow.camera.near = 1;sun.shadow.camera.far = 130;sun.shadow.normalBias = .035;sun.shadow.bias = -.0001;
 scene.add(sun, sun.target);
@@ -123,7 +126,9 @@ const walkerEvent=createWalkerEvent(),walker=createWalker(scene);
 const rabbitEvent=createRabbitEvent(),rabbitHome=createRabbitHome(scene);
 const catEvent=createCatEvent(),catHome=createCatHome(scene);
 const paintingWorld=createPaintingWorld(scene),artistEvent=createArtistEvent();
-let artist;
+const starryEvent=createStarryEvent(),starryWorld=createStarryWorld(scene);
+let artist,starryPainter;
+if(import.meta.env.DEV&&preview.starry){state.lane=starryBranchCenter(state.distance);Object.assign(starryEvent,{status:'riding',entered:true,attention:false});}
 const director=createEncounterDirector();let mainEncounter=null;
 if(import.meta.env.DEV&&new URLSearchParams(location.search).has('previewArtistEnd'))Object.assign(artistEvent,{status:'active',pose:0,s:1206,speed:2});
 if(import.meta.env.DEV){const at=Number(new URLSearchParams(location.search).get('previewWalkerAt'));if(at>=WALKER.start&&at<=WALKER.end)walkerEvent.s=at;}
@@ -152,7 +157,7 @@ let wheelAngle = 0, crankAngle = 0, elapsed = 0, walkBlend=0, walkPhase=0;
 const bikeURL = new URL('../assets/bicycle/meadow-bicycle.glb', import.meta.url).href;
 Promise.all([new GLTFLoader().loadAsync(bikeURL), loadVegetation()]).then(([gltf]) => {
   updateChunks();paintingWorld.plantTrees();
-  model = gltf.scene;artist=createArtist(scene,model.clone(true));passingRiders=createPassingRiders(scene,model);vehicle.add(model);
+  model = gltf.scene;artist=createArtist(scene,model.clone(true));starryPainter=createStarryPainter(scene,model.clone(true));passingRiders=createPassingRiders(scene,model);vehicle.add(model);
   model.traverse(o => { if (o.isMesh) { o.castShadow = true;o.receiveShadow = true;if (o.material) o.material.envMapIntensity = .45; } });
   wheels = ['Wheel_Rear', 'Wheel_Front'].map(n => model.getObjectByName(n));
   crank = model.getObjectByName('Crank');pedals = ['Pedal_Left', 'Pedal_Right'].map(n => model.getObjectByName(n));steering = model.getObjectByName('Steering');
@@ -194,6 +199,9 @@ function pause(value = !state.paused) {
 }
 $('artist-invite').addEventListener('click',()=>{if(!state.paused&&mainEncounter==='artist'&&inviteArtist(artistEvent,state.distance,state.speed)){paintingPreference.invitation=true;requestWalking(state,false);refreshWalkingControl();}});
 $('artist-leave').addEventListener('click',()=>{if(!state.paused)leaveArtist(artistEvent);});
+$('starry-enter').addEventListener('click',()=>{if(!state.paused&&mainEncounter==='starry')enterStarry(starryEvent,state.distance);});
+$('starry-skip').addEventListener('click',()=>{if(!state.paused&&mainEncounter==='starry')skipStarry(starryEvent);});
+$('starry-leave').addEventListener('click',()=>{if(!state.paused)leaveStarry(starryEvent,state.distance);});
 const animalEntries=[{id:'rabbit',event:rabbitEvent,home:RABBIT_HOME,site:rabbitHome.site,animal:rabbitHome.bunny.bunny},{id:'cat',event:catEvent,home:CAT_HOME,site:catHome.site,animal:catHome.home.cat}];
 let animalDialogEntry=null;
 const animalSceneInteraction=createAnimalSceneInteraction({canvas:$('world'),camera,scene,state,entries:animalEntries,getOwner:()=>mainEncounter,onStop(){tiltSteering.interrupt();keys.clear();state.pointerSteer=0;}});
@@ -298,12 +306,13 @@ function frame(now) {
   const tilt=tiltSteering.update();state.tiltEnabled=tilt.enabled;state.tiltSteer=tilt.value;
   state.walkBlend=walkBlend;
   const attention=mainEncounter&&mainEncounter!=='walker';
-  state.weaveSafe=!attention&&!['active','joining'].includes(artistEvent.status)&&walkerEvent.status!=='active'&&!(state.distance>922&&state.distance<1000)&&!(state.distance>CAT_HOME-76&&state.distance<CAT_HOME+22);
+  state.weaveSafe=!attention&&!['active','joining'].includes(artistEvent.status)&&walkerEvent.status!=='active'&&!(state.distance>922&&state.distance<1000)&&!(state.distance>CAT_HOME-76&&state.distance<CAT_HOME+22)&&!(state.distance>STARRY.split-30&&state.distance<STARRY.releaseEnd+15);
   $('world').dataset.rideMode=state.rideMode;$('world').dataset.fastRequested=String(state.fastRequested);$('world').dataset.lane=state.lane.toFixed(3);
   const fallBlocked=!!mainEncounter||animalHolding(rabbitEvent)||animalHolding(catEvent)||['joining','active'].includes(artistEvent.status)||walkerEvent.status==='active';
   state.shoulderAllowed=!fallBlocked&&safeGrassAt(state.distance,state.lane)&&safeGrassAt(state.distance+28,state.lane);
   const previousTumblePhase=tumble.phase;
-  updateGrassTumble(tumble,state,dt,{blocked:fallBlocked});
+  const onStarryBranch=starryLaneGuide(state.distance,state.lane).onBranch;
+  updateGrassTumble(tumble,state,dt,{blocked:fallBlocked||onStarryBranch});
   if(tumble.phase!==previousTumblePhase&&tumbleLocked(tumble))clearRideInput();
   if(tumble.phase==='tipping'&&previousTumblePhase!=='tipping'){comfortPlayed=false;$('accelerate').setAttribute('aria-pressed','false');}
   if(tumble.phase==='resting'&&previousTumblePhase!=='resting')playComfort();
@@ -316,7 +325,13 @@ function frame(now) {
   document.querySelectorAll('[data-ride-mode],[data-key]').forEach(b=>b.disabled=locked);
   $('world').dataset.tumblePhase=tumble.phase;$('world').dataset.tumbleBlend=tumble.blend.toFixed(3);
   $('world').dataset.shoulderAllowed=String(state.shoulderAllowed);
+  const forkHere=state.distance>STARRY.split-8&&state.distance<STARRY.releaseEnd+12;
+  const branchBefore=starryBranchCenter(state.distance);
+  state.laneGuide=forkHere?starryLaneGuide(state.distance,state.lane):null;
+  const followedBranch=!!state.laneGuide?.onBranch;
   const traveled = updateRide(state, rideKeys, dt);
+  if(followedBranch)state.lane+=starryBranchCenter(state.distance)-branchBefore;
+  state.laneGuide=null;
   const pondStopAvailable=canWatchPond(state.paused?{...state,paused:false}:state);
   $('pond-lookout').hidden=!pondStopAvailable&&!state.pondWatching;
   $('pond-watch').hidden=!pondStopAvailable;
@@ -328,14 +343,17 @@ function frame(now) {
   if(releaseWalkerWalking(walkerEvent,state))refreshWalkingControl();
   // Advance independent lives first; schedule only one invitation/major encounter.
   updateArtist(artistEvent,{...encounterState,dt});if(artist)artist.update(artistEvent,elapsed);
+  updateStarry(starryEvent,{...encounterState,dt});
   updateCatEvent(catEvent,{...encounterState,dt});catHome.update(catEvent,elapsed);
-  if(!locked)mainEncounter=updateEncounterDirector(director,{walker:walkerEvent,duck:duckEvent,artist:artistEvent,rabbit:rabbitEvent,cat:catEvent},state);
+  if(!locked)mainEncounter=updateEncounterDirector(director,{walker:walkerEvent,duck:duckEvent,artist:artistEvent,rabbit:rabbitEvent,cat:catEvent,starry:starryEvent},state);
   $('world').dataset.mainEncounter=mainEncounter||'none';
   $('artist-encounter').hidden=mainEncounter!=='artist'||!state.started||(!['available','joining','active'].includes(artistEvent.status)&&!(artistEvent.status==='arrived'&&artistEvent.time<4&&Math.abs(state.distance-artistEvent.s)<24));
   $('artist-invite').hidden=!canInviteArtist(artistEvent,state.distance,state.speed);
   $('artist-leave').hidden=!['joining','active'].includes(artistEvent.status);
   $('artist-message').textContent=artistEvent.status==='arrived'?'我在这里再画一会儿。回头见。':artistEvent.status==='available'?'湖边画家收起画笔，想沿水边骑一小段。':'湖光在前面，你可以随时独自往前。';
   $('world').dataset.artistState=artistEvent.status;$('world').dataset.artistGap=(artistEvent.lane-state.lane).toFixed(2);
+  $('starry-encounter').hidden=true;
+  $('world').dataset.starryState=starryEvent.status;
   updateRabbitEvent(rabbitEvent,{...encounterState,dt});rabbitHome.update(rabbitEvent,elapsed);
   refreshAnimalDialog();
   $('world').dataset.rabbitState=rabbitEvent.status;$('world').dataset.catState=catEvent.status;$('world').dataset.rabbitSeat=rabbitEvent.seat||'none';$('world').dataset.catSeat=catEvent.seat||'none';
@@ -345,6 +363,7 @@ function frame(now) {
   if(walkerEvent.status==='arrived'&&walkerEvent.accompanied)memoryChanged=remember(journey,'walker',memoryStorage)||memoryChanged;
   if(duckEvent.status==='complete'&&duckEvent.witnessed)memoryChanged=remember(journey,'ducks',memoryStorage)||memoryChanged;
   if(artistEvent.status==='arrived'){memoryChanged=remember(journey,'artist',memoryStorage)||memoryChanged;if(unlockPainting(journey,memoryStorage)){paintingPreference.choice='impressionist';$('painting-options').hidden=false;$('painting-select').value=paintingPreference.choice;try{localStorage.setItem('meadow-painting-choice',paintingPreference.choice);}catch{}}}
+  if(starryEvent.journal)memoryChanged=remember(journey,'starry',memoryStorage)||memoryChanged;
   if(memoryChanged)refreshMemories();
   scene.userData.playerS=state.distance;walker.update(walkerEvent,elapsed);
   $('walker-encounter').hidden=mainEncounter!=='walker'||!state.started||!['available','active'].includes(walkerEvent.status)&&!(walkerEvent.status==='arrived'&&walkerEvent.accompanied&&walkerEvent.arrivalTime<5&&Math.abs(state.distance-walkerEvent.s)<25);
@@ -396,18 +415,29 @@ function frame(now) {
   const paintingRequested=(import.meta.env.DEV&&preview.painting)||(!(import.meta.env.DEV&&preview.natural)&&wantsPainting(paintingPreference,artistEvent.status,journey.themes.impressionist));
   if(!state.paused)paintBlend=THREE.MathUtils.damp(paintBlend,paintingRequested?1:0,1.2,dt);
   const paintingAmount=paintingWeight(s)*paintBlend;paintingWorld.update(paintingAmount);setPaintingScenery(paintingAmount);setPaintingVegetation(paintingAmount);
+  const starry=starryView(starryEvent,s,state.lane);
   const landscape=landscapeAt(s),bayLight=landscape.bay||0,valleyLight=landscape.valley||0,tunnel=tunnelProfile(s);
   scene.background.set('#dce7d0').lerp(new THREE.Color('#dce1de'),paintingAmount).lerp(new THREE.Color('#ecdfcd'),bayLight*.65);scene.background.lerp(new THREE.Color('#c9dfe0'),lakeLook*.65).lerp(new THREE.Color('#b3c0ae'),tunnel.shade*.30);
-  scene.background.lerp(new THREE.Color('#afc4a9'),forestShade*.72).lerp(new THREE.Color('#e4d3a6'),gold*.28);
-  scene.fog.color.copy(scene.background);
-  scene.fog.near=65-forestShade*42;
-  scene.fog.far=220-forestShade*107;
+  scene.background.lerp(new THREE.Color('#afc4a9'),forestShade*.72).lerp(new THREE.Color('#e4d3a6'),gold*.28).lerp(starryBackground,starry.distant);
+  scene.fog.color.copy(scene.background).lerp(starryHorizon,starry.distant);
+  scene.fog.near=THREE.MathUtils.lerp(65-forestShade*42,THREE.MathUtils.lerp(34,STARRY_LIGHT.fogNear,starry.village),starry.distant);
+  scene.fog.far=THREE.MathUtils.lerp(220-forestShade*107,THREE.MathUtils.lerp(STARRY_LIGHT.blueFogFar,STARRY_LIGHT.fogFar,starry.village),starry.distant);
   sky.cloud.material.color.set('#faf5db').lerp(new THREE.Color('#f2dfce'),paintingAmount);
   $('world').dataset.paintingAmount=paintingAmount.toFixed(3);
+  $('world').dataset.starryConnect=starry.connect.toFixed(3);$('world').dataset.starryDistant=starry.distant.toFixed(3);$('world').dataset.starryVillage=starry.village.toFixed(3);
   if (model && Math.floor(s / CHUNK_LENGTH) !== lastChunk) { updateChunks();lastChunk = Math.floor(s / CHUNK_LENGTH); }
   forward.set(tangentAt(s), 0, -1).normalize();right.set(-forward.z, 0, forward.x);
+  const rideGuide=starryLaneGuide(s,state.lane),rideFrame=starryRoadFrame(s,state.lane);
+  if(rideGuide.onBranch){
+    const next=starryRoadFrame(s+2,state.lane+starryBranchCenter(s+2)-starryBranchCenter(s));
+    starryAhead.set(next.x-rideFrame.x,0,next.z-rideFrame.z);
+    if(starryAhead.lengthSq()>1e-8)forward.lerp(starryAhead.normalize(),1).normalize();
+    right.set(-forward.z,0,forward.x);
+  }
   const frontHeight=roadRelief(s+.52,state.lane),rearHeight=roadRelief(s-.52,state.lane);
-  vehicle.position.set(roadX + right.x * state.lane, y + .025 + (frontHeight+rearHeight)*.5, -s + right.z * state.lane);
+  const rideLift=(frontHeight+rearHeight)*.5;
+  vehicle.position.set(rideFrame.x, rideGuide.onBranch?starrySurfaceY(rideFrame.x,s)+.03+rideLift:y+.025+rideLift, rideFrame.z);
+  starryWorld.update(starry,{x:roadX,y,s},chunks.values());starryPainter?.update(starryEvent,s,starry,elapsed);
   if(Math.abs(state.lane)>roadHalfWidthAt(s))vehicle.position.y=groundAt(vehicle.position.x,-vehicle.position.z)+.025;
   const yaw = Math.atan2(-forward.z, forward.x) - state.turn * .10;
   vehicle.rotation.set(0, yaw, 0);
@@ -513,21 +543,25 @@ function frame(now) {
   else translateRideCamera(camera.position,lookSmooth,previousRidePosition,vehicle.position);
   camera.position.lerp(cameraDesired, follow);lookSmooth.lerp(look, follow);camera.lookAt(lookSmooth);firstFrame = false;
   sky.group.position.set(roadX * .4, y*.7, -s);sky.cloud.rotation.y = elapsed * .0005;
-  sky.ridgeClouds.material.opacity=Math.max(0,Math.min(1,(s-8080)/150,(9220-s)/150))*.72;
+  sky.ridgeClouds.material.opacity=Math.max(0,Math.min(1,(s-8080)/150,(9220-s)/150))*.72*(1-starry.distant);
+  applyStarrySky(sky,starry.distant);
   sky.ridgeClouds.rotation.y=elapsed*.00012;
-  ambientLight.intensity = 2.1 - treeShade*.65 - landscape.uphill*.28 - valleyLight*.40 - paintingAmount*.40 - tunnel.shade*.68 + crestLight*.11;
-  ambientLight.groundColor.set('#829363').lerp(new THREE.Color('#8995b6'),paintingAmount);
-  sun.color.set('#fff0ce').lerp(new THREE.Color('#ffe1a6'),paintingAmount).lerp(new THREE.Color('#ffd7aa'),bayLight*.65).lerp(new THREE.Color('#ffd28a'),gold*.57+glade*.18);
-  sun.intensity=(3+paintingAmount*.45)*(1-tunnel.shade*.60)*(1-treeShade*.08)*(1-forestShade*.14+glade*.18+gold*.08);
-  renderer.toneMappingExposure=.98*(1-tunnel.shade*.14);
+  ambientLight.color.set('#fff2d4').lerp(starryAmbient,starry.distant);
+  ambientLight.intensity = THREE.MathUtils.lerp(2.1 - treeShade*.65 - landscape.uphill*.28 - valleyLight*.40 - paintingAmount*.40 - tunnel.shade*.68 + crestLight*.11,STARRY_LIGHT.ambientLevel,starry.distant);
+  ambientLight.groundColor.set('#829363').lerp(new THREE.Color('#8995b6'),paintingAmount).lerp(starryGround,starry.distant);
+  sun.color.set('#fff0ce').lerp(new THREE.Color('#ffe1a6'),paintingAmount).lerp(new THREE.Color('#ffd7aa'),bayLight*.65).lerp(new THREE.Color('#ffd28a'),gold*.57+glade*.18).lerp(starryMoonColor,starry.distant);
+  sun.intensity=THREE.MathUtils.lerp((3+paintingAmount*.45)*(1-tunnel.shade*.60)*(1-treeShade*.08)*(1-forestShade*.14+glade*.18+gold*.08),STARRY_LIGHT.sunLevel,starry.distant);
+  renderer.toneMappingExposure=THREE.MathUtils.lerp(.98*(1-tunnel.shade*.14),STARRY_LIGHT.exposure,starry.distant);
   if(import.meta.env.DEV){$('world').dataset.tunnelSeason=tunnel.name;$('world').dataset.tunnelShade=tunnel.shade.toFixed(3);}
   sun.position.set(roadX - 30 - gold*6, y + 45 - gold*14, -s - 25 + forest*6*Math.sin(s*.015));sun.target.position.copy(vehicle.position);
+  if(starry.distant>0){starryMoon.set(roadX-22,y+16,-s-40);sun.position.lerp(starryMoon,starry.distant);}
   hudTick += dt;
   if (hudTick > .15) {
     routeMap.update(s);
     const avenue = OPENING_AVENUES.find(({start,end})=>s>=start && s<end);
-    const place = s<START_COURTYARD.to ? '起点小院' : lakeLook>.25 ? '清湖岸边' : forest>.30 ? '森林小径' : avenue?.label ?? landscape.label;
-    $('place-name').textContent=tumble.phase==='slowing'?'草地松软 · 可以回到小路':s>=ROUTE_LENGTH?'抵达湖湾 · 10 km':place+' · '+(roadSurface(s,state.lane).roughness>.5?'路边碎石':'慢慢骑行');
+    const place = starry.village>.45?'画家村':starry.distant>.35?'写生小径':s<START_COURTYARD.to ? '起点小院' : lakeLook>.25 ? '清湖岸边' : forest>.30 ? '森林小径' : avenue?.label ?? landscape.label;
+    if(import.meta.env.DEV)$('world').dataset.sky=scene.background.getHexString();
+    $('place-name').textContent=tumble.phase==='slowing'?'草地松软 · 可以回到小路':s>=ROUTE_LENGTH?'抵达湖湾 · 10 km':place+' · '+((rideGuide.onBranch)?'灰色小路':roadSurface(s,state.lane).roughness>.5?'路边碎石':'慢慢骑行');
     $('speed').textContent = Math.round(state.speed * 3.6);$('distance').innerHTML = `${(s / 1000).toFixed(2)} <small>km</small>`;
     $('world').dataset.walking=String(state.walking);$('world').dataset.walkBlend=walkBlend.toFixed(3);
     $('world').dataset.distance = s.toFixed(2);$('world').dataset.speed = state.speed.toFixed(2);$('world').dataset.paused = String(state.paused);$('world').dataset.chunks = chunks.size;
