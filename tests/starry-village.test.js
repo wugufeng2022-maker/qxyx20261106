@@ -4,8 +4,8 @@ import * as THREE from 'three';
 import {PAINTING,paintingWeight,choosePainting,wantsPainting} from '../src/painting.js';
 import {createEncounterDirector,updateEncounterDirector} from '../src/encounter-director.js';
 import {loadJourney,remember} from '../src/journey.js';
-import {centerAt,tangentAt} from '../src/route.js';
-import {STARRY,STARRY_LIGHT,canEnterStarry,createStarryEvent,createStarryWorld,enterStarry,fadeCountryside,leaveStarry,skipStarry,starryBend,starryBendCount,starryFigurePose,starryRoadFrame,starryRoadSpan,starryView,starryVillageSeconds,updateStarry} from '../src/starry-village.js';
+import {centerAt,groundAt,tangentAt} from '../src/route.js';
+import {STARRY,STARRY_LIGHT,canEnterStarry,createStarryEvent,createStarryWorld,enterStarry,fadeCountryside,leaveStarry,skipStarry,starryBend,starryBendCount,starryFigurePose,starryPaintedFrame,starryRoadFrame,starryRoadSpan,starrySurfaceY,starryView,starryVillageSeconds,updateStarry} from '../src/starry-village.js';
 
 const tick=(e,distance,dt=.05,extra={})=>updateStarry(e,{started:true,paused:false,distance,dt,...extra});
 
@@ -108,9 +108,9 @@ test('painted props stay off the rideable road and daytime props can fade withou
   assert.equal(world.group.visible,false);
   assert.equal(world.road.material.polygonOffset,true);
   assert.equal(world.dome.material.fog,false);
-  assert.equal(world.nebula.material.fog,false);
   assert.equal(world.moon.material.fog,false);
-  assert.ok(['procedural-sky','flat-color'].includes(world.group.userData.samples.texture));
+  world.group.traverse(obj=>{if(obj.geometry?.type==='PlaneGeometry')assert.ok(Math.max(obj.geometry.parameters.width,obj.geometry.parameters.height)<2,obj.name);});
+  assert.equal(world.group.userData.samples.texture,'sphere-sky');
   const {stones,houses,trees,wallTops,clusters,moon,roadHalf}=world.group.userData.samples;
   assert.equal(roadHalf,2.15);
   assert.ok(stones.length>800&&stones.length<12000);
@@ -134,5 +134,28 @@ test('painted props stay off the rideable road and daytime props can fade withou
   fadeCountryside([inside,far],1);
   assert.notEqual(mesh.material,shared);assert.ok(mesh.material.opacity<.05);assert.equal(shared.opacity,1);assert.equal(outside.material,shared);
   fadeCountryside([inside],0);assert.equal(mesh.material,shared);assert.equal(mesh.visible,true);
+  const roadPos=world.road.geometry.attributes.position;
+  let previous=null;
+  for(let s=STARRY.revealEnd;s<=STARRY.releaseStart;s+=10){
+    for(const lane of [-1.5,0,1.5]){
+      const point=starryPaintedFrame(s,lane);
+      let nearest=Infinity,nearestY=0;
+      for(let i=0;i<roadPos.count;i++){
+        const d=Math.hypot(roadPos.getX(i)-point.x,roadPos.getZ(i)-point.z);
+        if(d<nearest){nearest=d;nearestY=roadPos.getY(i);}
+      }
+      assert.ok(nearest<halfSpan(lane),`${s} lane ${lane} is ${nearest}m off the road mesh`);
+      assert.ok(nearestY>=starrySurfaceY(point.x,s)-.01,`${s} road is buried`);
+    }
+    const center=starryPaintedFrame(s,0);
+    if(previous)assert.ok(Math.hypot(center.x-previous.x,center.z-previous.z)<12);
+    previous=center;
+    for(const spot of stones){
+      if(Math.abs(spot.s-s)>.4)continue;
+      const dx=spot.x-center.x,dz=spot.z-center.z;
+      assert.ok(Math.hypot(dx,dz)>STARRY.roadHalf+.05,`${s} wall crosses the road`);
+    }
+  }
   world.dispose();
 });
+function halfSpan(lane){return Math.abs(lane)<.2?.6:1.15;}

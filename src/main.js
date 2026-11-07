@@ -12,7 +12,7 @@ import { createDuckEvent, updateDuckEvent, canChooseDuckWait, chooseDuckWait, le
 import {createEncounterDirector,updateEncounterDirector} from './encounter-director.js';
 import {createArtistEvent,createArtist,updateArtist,inviteArtist,leaveArtist,canInviteArtist} from './artist.js';
 import {createPaintingWorld,paintingWeight,choosePainting,wantsPainting} from './painting.js';
-import {applyStarrySky,canEnterStarry,createStarryEvent,createStarryPainter,createStarryWorld,enterStarry,leaveStarry,skipStarry,STARRY,STARRY_LIGHT,starryBend,starryRoadFrame,starryView,updateStarry} from './starry-village.js';
+import {applyStarrySky,canEnterStarry,createStarryEvent,createStarryPainter,createStarryWorld,enterStarry,leaveStarry,skipStarry,STARRY,STARRY_LIGHT,starryBend,starryRoadFrame,starrySurfaceY,starryView,updateStarry} from './starry-village.js';
 import {loadJourney,remember,unlockPainting,MEMORY_LABELS} from './journey.js';
 import {createRabbitEvent,inviteRabbit,updateRabbitEvent,createRabbitHome,RABBIT_HOME} from './rabbit-event.js';
 import {createRabbit} from './rabbit.js';
@@ -435,7 +435,8 @@ function frame(now) {
     right.set(-forward.z,0,forward.x);
   }
   const frontHeight=roadRelief(s+.52,state.lane),rearHeight=roadRelief(s-.52,state.lane);
-  vehicle.position.set(rideFrame.x, y + .025 + (frontHeight+rearHeight)*.5, rideFrame.z);
+  const rideLift=(frontHeight+rearHeight)*.5;
+  vehicle.position.set(rideFrame.x, THREE.MathUtils.lerp(y+.025+rideLift, starrySurfaceY(rideFrame.x,s)+.03+rideLift, starry.village), rideFrame.z);
   starryWorld.update(starry,{x:roadX,y,s},chunks.values());starryPainter?.update(starryEvent,s,starry,elapsed);
   if(Math.abs(state.lane)>roadHalfWidthAt(s))vehicle.position.y=groundAt(vehicle.position.x,-vehicle.position.z)+.025;
   const yaw = Math.atan2(-forward.z, forward.x) - state.turn * .10;

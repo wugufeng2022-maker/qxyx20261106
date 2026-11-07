@@ -103,6 +103,7 @@ export function starryBend(s){
   return STARRY.bend*env*Math.sin(u*Math.PI*3);
 }
 export function starryPaintedFrame(s,lane=0){return starryRoadFrame(s,lane+starryBend(s));}
+export function starrySurfaceY(x,s){return Math.max(heightAt(s),groundAt(x,s));}
 export function starryBendCount(){
   let prev=0,count=0;
   for(let s=STARRY.revealEnd;s<=STARRY.releaseStart;s+=1){
@@ -153,23 +154,6 @@ function canvasTexture(draw,width,height){
   texture.needsUpdate=true;
   return texture;
 }
-function paintSky(g,w,h){
-  const rand=rng(20261107);
-  g.fillStyle='#081226';g.fillRect(0,0,w,h);
-  const wash=g.createRadialGradient(w*.62,h*.58,20,w*.62,h*.58,w*.42);
-  wash.addColorStop(0,'rgba(28,48,92,.85)');wash.addColorStop(1,'rgba(8,18,38,0)');
-  g.fillStyle=wash;g.fillRect(0,0,w,h);
-  for(let i=0;i<1600;i++){
-    const t=i/1600,ang=t*Math.PI*4.4,rx=.16+.1*Math.sin(t*6.5);
-    const x=w*(.58+Math.cos(ang)*rx)+ (rand()-.5)*22,y=h*(.62+Math.sin(ang)*rx*.72)+(rand()-.5)*16;
-    const tone=i%5;
-    g.fillStyle=`rgba(${tone===0?230:170+rand()*50|0},${tone===1?210:150+rand()*60|0},${tone===2?230:170+rand()*40|0},${.28+rand()*.55})`;
-    g.beginPath();g.arc(x,y,1.15+rand()*1.35,0,Math.PI*2);g.fill();
-  }
-  g.fillStyle='#ffe14a';g.beginPath();g.arc(w*.3,h*.48,Math.min(w,h)*.1,0,Math.PI*2);g.fill();
-  g.fillStyle='rgba(255,236,170,.4)';g.beginPath();g.arc(w*.3,h*.48,Math.min(w,h)*.15,0,Math.PI*2);g.fill();
-  for(let i=0;i<420;i++){g.fillStyle=`rgba(255,246,224,${.35+rand()*.65})`;g.fillRect(rand()*w,rand()*h*.92,1.4,1.4);}
-}
 function paintStudy(g,w,h){
   g.fillStyle='#10203f';g.fillRect(0,0,w,h);
   g.fillStyle='#ffe39a';g.beginPath();g.arc(w*.28,h*.16,w*.1,0,Math.PI*2);g.fill();
@@ -206,7 +190,7 @@ export function createStarryWorld(scene){
     for(let i=0;i<=across;i++){
       const lane=THREE.MathUtils.lerp(-half,half,i/across),frame=starryPaintedFrame(s,lane);
       const shade=.97+.03*Math.sin(s*.04+i);colors.push(shade,shade*.99,shade*.94);
-      positions.push(frame.x,heightAt(s)+.034,frame.z);
+      positions.push(frame.x,starrySurfaceY(frame.x,s)+.02,frame.z);
       if(i<across&&s+step<=roadTo){const a=row*(across+1)+i,b=a+across+1;indices.push(a,a+1,b,a+1,b+1,b);}
     }
   }
@@ -230,7 +214,7 @@ export function createStarryWorld(scene){
   const brickSpots=[];
   for(let s=STARRY.revealEnd,n=0;s<=STARRY.releaseStart;s+=.7,n++){
     const frame=starryPaintedFrame(s,0);
-    brickSpots.push({x:frame.x,y:heightAt(s)+.055,z:frame.z,yaw:Math.atan2(frame.fx,frame.fz),color:brickColors[n%brickColors.length]});
+    brickSpots.push({x:frame.x,y:starrySurfaceY(frame.x,s)+.045,z:frame.z,yaw:Math.atan2(frame.fx,frame.fz),color:brickColors[n%brickColors.length]});
   }
   const box=keep(new THREE.BoxGeometry(1,1,1));
   const bricks=new THREE.InstancedMesh(box,brickMat,Math.max(1,brickSpots.length));bricks.name='Painted brick center';
@@ -306,26 +290,33 @@ export function createStarryWorld(scene){
     limb(tree,[side*.75,crown-.02,-.16],[side*.5,h*1.22,.1],.018,twigMat);
     trees.add(tree);treeSpots.push({s,lane,x:frame.x,z:frame.z,branches:6});
   }
-  const skyTexture=canvasTexture(paintSky,1024,512);
-  const skyMat=track(new THREE.MeshBasicMaterial({color:skyTexture?'#ffffff':'#091428',map:skyTexture,fog:false,transparent:true,depthWrite:false,side:THREE.DoubleSide}));
   const skyRig=new THREE.Group();skyRig.name='Starry sky rig';group.add(skyRig);
   const domeMat=track(new THREE.MeshBasicMaterial({color:'#091428',side:THREE.BackSide,fog:false,transparent:true,depthWrite:false}));
-  const dome=new THREE.Mesh(keep(new THREE.SphereGeometry(120,20,12)),domeMat);dome.name='Night fill';skyRig.add(dome);
-  const nebula=new THREE.Mesh(keep(new THREE.PlaneGeometry(58,28)),skyMat);nebula.name='Curling night nebula';nebula.position.set(0,6.5,-20);skyRig.add(nebula);
+  const dome=new THREE.Mesh(keep(new THREE.SphereGeometry(120,24,16)),domeMat);dome.name='Night fill';skyRig.add(dome);
+  const starMat=track(new THREE.MeshBasicMaterial({color:'#fff6e0',fog:false,transparent:true,depthWrite:false,toneMapped:false}));
+  const starGeo=keep(new THREE.SphereGeometry(1,6,5));
+  const stars=new THREE.InstancedMesh(starGeo,starMat,70);stars.name='Small night stars';
+  for(let i=0;i<70;i++){
+    const across=(rand()-.5)*1.4,ahead=.35+rand()*.8,up=.25+rand()*.7,radius=80+rand()*25;
+    const len=Math.hypot(across,ahead,up);
+    dummy.position.set(across/len*radius,up/len*radius,-ahead/len*radius);
+    dummy.scale.setScalar(.12+rand()*.16);dummy.updateMatrix();stars.setMatrixAt(i,dummy.matrix);
+  }
+  skyRig.add(stars);
   const moon=new THREE.Mesh(keep(new THREE.SphereGeometry(1.35,20,16)),track(new THREE.MeshBasicMaterial({color:STARRY_LIGHT.moon,fog:false,transparent:true,depthWrite:false})));
-  moon.name='Yellow moon';moon.position.set(-3.2,6.2,-16);skyRig.add(moon);
+  moon.name='Yellow moon';moon.material.toneMapped=false;moon.position.set(-3.2,6.2,-16);skyRig.add(moon);
   const villageMaterials=[vergeMat,brickMat,stoneMat,...houseWalls,roofMat,trimMat,windowMat,doorMat,trunkMat,twigMat];
   const villageObjects=[verge,bricks,stones,village,trees];
-  group.userData.samples={stones:stoneSpots,houses,trees:treeSpots,texture:skyTexture?'procedural-sky':'flat-color',roadHalf:half,wallTops,clusters:plans.length,moon:{x:-3.2,y:6.2,z:-16}};
+  group.userData.samples={stones:stoneSpots,houses,trees:treeSpots,texture:'sphere-sky',roadHalf:half,wallTops,clusters:plans.length,moon:{x:-3.2,y:6.2,z:-16}};
   group.visible=false;
-  return {group,road,dome,nebula,moon,update(view,anchor,chunks){
+  return {group,road,dome,moon,stars,update(view,anchor,chunks){
     const show=view.connect>.002||view.distant>.002||view.village>.002;
     group.visible=show;
     applyFade([roadMat],[road],Math.max(view.connect,view.village));
     applyFade(villageMaterials,villageObjects,view.village);
     const skyOn=view.distant>.002;
-    dome.visible=nebula.visible=moon.visible=skyOn;
-    domeMat.opacity=view.distant;skyMat.opacity=view.distant;moon.material.opacity=view.distant;
+    dome.visible=stars.visible=moon.visible=skyOn;
+    domeMat.opacity=view.distant;starMat.opacity=view.distant;moon.material.opacity=view.distant;
     if(anchor){
       const frame=starryPaintedFrame(anchor.s,0);
       skyRig.position.set(frame.x,anchor.y,frame.z);
