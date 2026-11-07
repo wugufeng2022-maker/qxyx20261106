@@ -5,7 +5,7 @@ import {PAINTING,paintingWeight,choosePainting,wantsPainting} from '../src/paint
 import {createEncounterDirector,updateEncounterDirector} from '../src/encounter-director.js';
 import {loadJourney,remember} from '../src/journey.js';
 import {centerAt,tangentAt} from '../src/route.js';
-import {STARRY,STARRY_LIGHT,canEnterStarry,createStarryEvent,createStarryWorld,enterStarry,fadeCountryside,leaveStarry,skipStarry,starryBendCount,starryFigurePose,starryRoadFrame,starryRoadSpan,starryView,starryVillageSeconds,updateStarry} from '../src/starry-village.js';
+import {STARRY,STARRY_LIGHT,canEnterStarry,createStarryEvent,createStarryWorld,enterStarry,fadeCountryside,leaveStarry,skipStarry,starryBend,starryBendCount,starryFigurePose,starryRoadFrame,starryRoadSpan,starryView,starryVillageSeconds,updateStarry} from '../src/starry-village.js';
 
 const tick=(e,distance,dt=.05,extra={})=>updateStarry(e,{started:true,paused:false,distance,dt,...extra});
 
@@ -14,6 +14,12 @@ test('starry village is a separate theme on the real wheat road',()=>{
   assert.equal(paintingWeight((STARRY.revealEnd+STARRY.releaseStart)/2),0);
   assert.equal(starryView({status:'active',entryAt:STARRY.easel},1130).distant,0);
   assert.equal(starryBendCount(),3);
+  assert.equal(starryBend(STARRY.revealEnd),0);
+  assert.equal(starryBend(STARRY.releaseStart),0);
+  assert.ok(Math.abs(starryBend((STARRY.revealEnd+STARRY.releaseStart)/2))>4);
+  let swing=0;
+  for(let s=STARRY.revealEnd;s<STARRY.releaseStart-45;s+=5)swing=Math.max(swing,Math.abs(starryBend(s+45)-starryBend(s)));
+  assert.ok(swing>2.2,`visible bend ${swing}`);
   assert.ok(starryRoadSpan()>8);
   const seconds=starryVillageSeconds();
   assert.ok(seconds>52&&seconds<70,`village ride ${seconds}`);
@@ -102,16 +108,21 @@ test('painted props stay off the rideable road and daytime props can fade withou
   assert.equal(world.group.visible,false);
   assert.equal(world.road.material.polygonOffset,true);
   assert.equal(world.dome.material.fog,false);
-  assert.equal(world.group.userData.samples.texture,'procedural-sky');
-  const {stones,houses,trees}=world.group.userData.samples;
-  assert.ok(stones.length>400&&stones.length<4000);
-  assert.ok(houses.length>=8&&trees.length>=4);
+  assert.equal(world.nebula.material.fog,false);
+  assert.equal(world.moon.material.fog,false);
+  assert.ok(['procedural-sky','flat-color'].includes(world.group.userData.samples.texture));
+  const {stones,houses,trees,wallTops,clusters,moon,roadHalf}=world.group.userData.samples;
+  assert.equal(roadHalf,2.15);
+  assert.ok(stones.length>800&&stones.length<12000);
+  assert.ok(houses.length>=12&&trees.length>=6&&clusters>=4);
+  assert.ok(Math.max(...wallTops)-Math.min(...wallTops)>.18);
+  assert.ok(moon.z<-12&&moon.y>5&&moon.x<0);
   for(const spot of stones){
-    assert.ok(Math.abs(spot.lane)-spot.r>2.45);
+    assert.ok(Math.abs(spot.lane)-spot.r>2.25);
     assert.ok(Number.isFinite(spot.x+spot.y+spot.z));
   }
-  for(const home of houses)assert.ok(Math.abs(home.lane)>7);
-  for(const tree of trees)assert.ok(Math.abs(tree.lane)>4.8);
+  for(const home of houses)assert.ok(Math.abs(home.lane)>=4.7);
+  for(const tree of trees){assert.ok(Math.abs(tree.lane)>3.4);assert.ok(tree.branches>=4);}
   world.update({connect:1,distant:1,village:1},{x:centerAt(4620),y:0,s:4620},[]);
   assert.equal(world.group.visible,true);
   assert.equal(world.road.material.opacity,1);

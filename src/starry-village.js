@@ -20,17 +20,20 @@ export const STARRY=Object.freeze({
   end:4892,
   bikeLane:4.55,
   easelLane:3.28,
+  roadHalf:2.15,
+  bend:7.6,
 });
 export const STARRY_LIGHT=Object.freeze({
   background:'#07111f',
-  ambient:'#c5d2ea',
-  ground:'#5c516e',
-  moon:'#ffe39a',
-  ambientLevel:1.5,
-  sunLevel:1.7,
-  exposure:.9,
-  fogNear:14,
-  fogFar:58,
+  ambient:'#d5def2',
+  ground:'#6a5d52',
+  moon:'#ffe14a',
+  ambientLevel:1.15,
+  sunLevel:1.35,
+  exposure:.94,
+  fogNear:20,
+  fogFar:72,
+  blueFogFar:120,
 });
 const smooth=(a,b,x)=>{if(!(b>a))return x>=b?1:0;const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
 const NIGHT=new THREE.Color(STARRY_LIGHT.background);
@@ -86,19 +89,28 @@ export function starryVillageSeconds(step=2){
   for(let s=STARRY.revealEnd;s<STARRY.releaseStart;s+=step)time+=step/Math.max(.2,gradeSpeed(5,s)*roadSurface(s,0).speedFactor);
   return time;
 }
-export function starryBendCount(){
-  let prev=0,count=0;
-  for(let s=STARRY.revealEnd;s<=STARRY.releaseStart;s+=1){
-    const turn=tangentAt(s+.5)-tangentAt(s-.5),sign=Math.sign(turn);
-    if(prev&&sign&&sign!==prev)count++;
-    if(sign)prev=sign;
-  }
-  return count;
-}
 export function starryRoadSpan(){
   let min=Infinity,max=-Infinity;
   for(let s=STARRY.revealEnd;s<=STARRY.releaseStart;s+=5){const x=centerAt(s);min=Math.min(min,x);max=Math.max(max,x);}
   return max-min;
+}
+// A rideable S added to the real lane. Zero value and slope at both ends,
+// so the painted road joins the wheat road and leaves it again.
+export function starryBend(s){
+  const a=STARRY.revealEnd,b=STARRY.releaseStart;
+  if(s<=a||s>=b)return 0;
+  const u=(s-a)/(b-a),env=smooth(0,.12,u)*(1-smooth(.88,1,u));
+  return STARRY.bend*env*Math.sin(u*Math.PI*3);
+}
+export function starryPaintedFrame(s,lane=0){return starryRoadFrame(s,lane+starryBend(s));}
+export function starryBendCount(){
+  let prev=0,count=0;
+  for(let s=STARRY.revealEnd;s<=STARRY.releaseStart;s+=1){
+    const turn=starryBend(s+1)-starryBend(s-1),sign=Math.sign(turn);
+    if(prev&&sign&&sign!==prev)count++;
+    if(sign)prev=sign;
+  }
+  return count;
 }
 
 const FADE_NAME=/^(Golden wheat fields|Gathered hay rolls|Plants · BirchTree_|Plants · Grass_|Plants · Flower_|Plants · Meadow)/;
@@ -141,6 +153,23 @@ function canvasTexture(draw,width,height){
   texture.needsUpdate=true;
   return texture;
 }
+function paintSky(g,w,h){
+  const rand=rng(20261107);
+  g.fillStyle='#081226';g.fillRect(0,0,w,h);
+  const wash=g.createRadialGradient(w*.62,h*.58,20,w*.62,h*.58,w*.42);
+  wash.addColorStop(0,'rgba(28,48,92,.85)');wash.addColorStop(1,'rgba(8,18,38,0)');
+  g.fillStyle=wash;g.fillRect(0,0,w,h);
+  for(let i=0;i<1600;i++){
+    const t=i/1600,ang=t*Math.PI*4.4,rx=.16+.1*Math.sin(t*6.5);
+    const x=w*(.58+Math.cos(ang)*rx)+ (rand()-.5)*22,y=h*(.62+Math.sin(ang)*rx*.72)+(rand()-.5)*16;
+    const tone=i%5;
+    g.fillStyle=`rgba(${tone===0?230:170+rand()*50|0},${tone===1?210:150+rand()*60|0},${tone===2?230:170+rand()*40|0},${.28+rand()*.55})`;
+    g.beginPath();g.arc(x,y,1.15+rand()*1.35,0,Math.PI*2);g.fill();
+  }
+  g.fillStyle='#ffe14a';g.beginPath();g.arc(w*.3,h*.48,Math.min(w,h)*.1,0,Math.PI*2);g.fill();
+  g.fillStyle='rgba(255,236,170,.4)';g.beginPath();g.arc(w*.3,h*.48,Math.min(w,h)*.15,0,Math.PI*2);g.fill();
+  for(let i=0;i<420;i++){g.fillStyle=`rgba(255,246,224,${.35+rand()*.65})`;g.fillRect(rand()*w,rand()*h*.92,1.4,1.4);}
+}
 function paintStudy(g,w,h){
   g.fillStyle='#10203f';g.fillRect(0,0,w,h);
   g.fillStyle='#ffe39a';g.beginPath();g.arc(w*.28,h*.16,w*.1,0,Math.PI*2);g.fill();
@@ -159,19 +188,26 @@ export function createStarryWorld(scene){
   const group=new THREE.Group();group.name='Starry stone village';group.userData.source='original-procedural';scene.add(group);
   const geometries=[],materials=[];
   const keep=g=>{geometries.push(g);return g;},track=m=>{materials.push(m);return m;};
-  const rand=rng(77);
-  const roadMat=track(new THREE.MeshStandardMaterial({color:'#f4f1e6',vertexColors:true,roughness:1,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2}));
+  const rand=rng(77),half=STARRY.roadHalf,dummy=new THREE.Object3D(),tint=new THREE.Color(),up=new THREE.Vector3(0,1,0);
+  const roadMat=track(new THREE.MeshStandardMaterial({color:'#f7f2e6',vertexColors:true,roughness:1,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2}));
+  const vergeMat=track(new THREE.MeshStandardMaterial({color:'#b9b3a6',roughness:1,side:THREE.DoubleSide}));
   const brickMat=track(new THREE.MeshStandardMaterial({color:'#ffffff',roughness:1,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-4}));
   const stoneMat=track(new THREE.MeshStandardMaterial({color:'#ffffff',roughness:1}));
-  const outlineMat=track(new THREE.MeshBasicMaterial({color:'#161311',side:THREE.BackSide}));
+  const wallMat=track(new THREE.MeshStandardMaterial({color:'#ffffff',roughness:1}));
+  const roofMat=track(new THREE.MeshStandardMaterial({color:'#f4f1ea',roughness:1}));
+  const trimMat=track(new THREE.MeshStandardMaterial({color:'#241c18',roughness:1}));
+  const windowMat=track(new THREE.MeshStandardMaterial({color:'#f3d7a1',roughness:1}));
+  const doorMat=track(new THREE.MeshStandardMaterial({color:'#6a4638',roughness:1}));
+  const trunkMat=track(new THREE.MeshBasicMaterial({color:'#14110e'}));
+  const twigMat=track(new THREE.MeshBasicMaterial({color:'#f4f0e6'}));
   const positions=[],indices=[],colors=[];
-  const roadFrom=STARRY.promptStart-8,roadTo=STARRY.end+6,roadStep=2,across=8,half=2.55;
-  for(let s=roadFrom,row=0;s<=roadTo;s+=roadStep,row++){
+  const roadFrom=STARRY.promptStart-8,roadTo=STARRY.end+6,step=2,across=6;
+  for(let s=roadFrom,row=0;s<=roadTo;s+=step,row++){
     for(let i=0;i<=across;i++){
-      const lane=THREE.MathUtils.lerp(-half,half,i/across),frame=starryRoadFrame(s,lane);
-      const shade=.94+.06*Math.sin(s*.07+i);colors.push(shade,shade*.985,shade*.94);
-      positions.push(frame.x,Math.max(heightAt(s)+.028,groundAt(frame.x,s)+.02),frame.z);
-      if(i<across&&s+roadStep<=roadTo){const a=row*(across+1)+i,b=a+across+1;indices.push(a,a+1,b,a+1,b+1,b);}
+      const lane=THREE.MathUtils.lerp(-half,half,i/across),frame=starryPaintedFrame(s,lane);
+      const shade=.97+.03*Math.sin(s*.04+i);colors.push(shade,shade*.99,shade*.94);
+      positions.push(frame.x,heightAt(s)+.034,frame.z);
+      if(i<across&&s+step<=roadTo){const a=row*(across+1)+i,b=a+across+1;indices.push(a,a+1,b,a+1,b+1,b);}
     }
   }
   const roadGeo=keep(new THREE.BufferGeometry());
@@ -179,100 +215,126 @@ export function createStarryWorld(scene){
   roadGeo.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
   roadGeo.setIndex(indices);roadGeo.computeVertexNormals();
   const road=new THREE.Mesh(roadGeo,roadMat);road.name='Milky painted road';road.receiveShadow=true;group.add(road);
-  const skirtMat=track(new THREE.MeshStandardMaterial({color:'#d4cdc0',roughness:1,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1}));
-  const skirtPos=[],skirtIndex=[];
-  for(let s=STARRY.revealStart-12,row=0;s<=STARRY.releaseStart+12;s+=roadStep,row++){
-    for(const lane of [-5.6,5.6]){const frame=starryRoadFrame(s,lane);skirtPos.push(frame.x,Math.max(heightAt(s)+.018,groundAt(frame.x,s)+.012),frame.z);}
-    if(s+roadStep<=STARRY.releaseStart+12){const a=row*2;skirtIndex.push(a,a+1,a+2,a+1,a+3,a+2);}
-  }
-  const skirtGeo=keep(new THREE.BufferGeometry());
-  skirtGeo.setAttribute('position',new THREE.Float32BufferAttribute(skirtPos,3));skirtGeo.setIndex(skirtIndex);skirtGeo.computeVertexNormals();
-  const skirt=new THREE.Mesh(skirtGeo,skirtMat);skirt.name='Milky verge';group.add(skirt);
-  const brickColors=['#c9847a','#d7b56a','#7f9bb8','#e3b0bc','#8aab96','#efe6d4'].map(c=>new THREE.Color(c));
-  const brickSpots=[];
-  for(let s=STARRY.revealStart,n=0;s<=STARRY.releaseStart;s+=.52,n++){
-    if(n%6===5)continue;
-    const frame=starryRoadFrame(s,0);
-    brickSpots.push({x:frame.x,y:heightAt(s)+.055,z:frame.z,yaw:frame.yaw,color:brickColors[n%brickColors.length]});
-  }
-  const brickGeo=keep(new THREE.BoxGeometry(1,1,1)),dummy=new THREE.Object3D(),tint=new THREE.Color();
-  const bricks=new THREE.InstancedMesh(brickGeo,brickMat,brickSpots.length);bricks.name='Painted brick center';
-  brickSpots.forEach((spot,i)=>{dummy.position.set(spot.x,spot.y,spot.z);dummy.rotation.set(0,spot.yaw,0);dummy.scale.set(.42,.045,.62);dummy.updateMatrix();bricks.setMatrixAt(i,dummy.matrix);bricks.setColorAt(i,tint.set(spot.color));});
-  bricks.instanceColor.needsUpdate=true;group.add(bricks);
-  const stoneSpots=[];
-  for(let s=STARRY.revealStart+4;s<=STARRY.releaseStart-4;s+=.55)for(const side of [-1,1])for(const layer of [0,1]){
-    const lane=side*(3.05+layer*.22+(rand()-.5)*.08),frame=starryRoadFrame(s,lane),radius=layer?.16+.04*rand():.22+.05*rand();
-    const y=groundAt(frame.x,s)+layer*.28-radius*.2;
-    stoneSpots.push({x:frame.x,y:y+radius,z:frame.z,r:radius,s,lane,color:['#e07a62','#f0c14a','#f2a3b8','#8ea4b8','#d9d3c7','#7faf9a','#e6b07a'][(stoneSpots.length)%7]});
-  }
-  const stoneGeo=keep(new THREE.SphereGeometry(1,10,8));
-  const stones=new THREE.InstancedMesh(stoneGeo,stoneMat,stoneSpots.length),outlines=new THREE.InstancedMesh(stoneGeo,outlineMat,stoneSpots.length);
-  stones.name='Colored pebble wall';outlines.name='Pebble ink outline';outlines.renderOrder=1;stones.renderOrder=2;
-  stoneSpots.forEach((spot,i)=>{
-    dummy.position.set(spot.x,spot.y,spot.z);dummy.scale.setScalar(spot.r);dummy.rotation.set(0,spot.s*.2,0);dummy.updateMatrix();stones.setMatrixAt(i,dummy.matrix);stones.setColorAt(i,tint.set(spot.color));
-    dummy.scale.setScalar(spot.r*1.06);dummy.updateMatrix();outlines.setMatrixAt(i,dummy.matrix);
-  });
-  stones.instanceColor.needsUpdate=true;group.add(outlines,stones);
-  const wallMat=track(new THREE.MeshStandardMaterial({color:'#ffffff',roughness:1})),roofMat=track(new THREE.MeshStandardMaterial({color:'#f7f4ee',roughness:1})),trimMat=track(new THREE.MeshBasicMaterial({color:'#1a1614',side:THREE.BackSide})),windowMat=track(new THREE.MeshStandardMaterial({color:'#f3d7a1',roughness:1}));
-  const box=keep(new THREE.BoxGeometry(1,1,1)),houses=[],houseWalls=[];
-  const village=new THREE.Group();village.name='Painted cottages';group.add(village);
-  for(let i=0;i<12;i++){
-    const s=STARRY.revealStart+28+(STARRY.releaseStart-STARRY.revealStart-56)*(i/11),side=i%2?1:-1;
-    const lane=side*(7.5+rand()*1.6),frame=starryRoadFrame(s,lane),w=2.3+rand()*1.4,d=2+rand()*.8,h=1.7+rand()*1.15;
-    const wall=wallMat.clone();wall.color.set(['#e39a62','#f0c24a','#e7a0b0','#8f9eb0','#d98a6a','#e6b07a'][i%6]);track(wall);houseWalls.push(wall);
-    const home=new THREE.Group();home.position.set(frame.x,groundAt(frame.x,s),frame.z);home.rotation.y=frame.yaw+rand()*.4;
-    const body=new THREE.Mesh(box,wall);body.scale.set(w,h,d);body.position.y=h*.5;body.castShadow=true;body.receiveShadow=true;
-    const ink=body.clone();ink.material=trimMat;ink.scale.multiplyScalar(1.045);ink.castShadow=false;
-    const roof=new THREE.Mesh(box,roofMat);roof.scale.set(w*1.12,.28,d*1.16);roof.position.y=h+.16;roof.rotation.z=side*.18;roof.castShadow=true;
-    const win=new THREE.Mesh(box,windowMat);win.scale.set(.42,.46,.06);win.position.set(0,h*.48,d*.5+.02);
-    const winBack=win.clone();winBack.position.z=-d*.5-.02;
-    home.add(ink,body,roof,win,winBack);village.add(home);houses.push({s,lane,x:frame.x,z:frame.z});
-  }
-  const trunkMat=track(new THREE.MeshBasicMaterial({color:'#14110e'})),twigMat=track(new THREE.MeshBasicMaterial({color:'#f7f4ea'}));
-  const trunkGeo=keep(new THREE.CylinderGeometry(.5,.62,1,5)),trees=new THREE.Group();trees.name='Leafless ink trees';group.add(trees);
-  const treeSpots=[];
-  for(let i=0;i<16;i++){
-    const s=STARRY.revealStart+18+(STARRY.releaseStart-STARRY.revealStart-36)*(i/15),side=i%2?-1:1;
-    if(houses.some(home=>Math.abs(home.s-s)<6&&Math.sign(home.lane)===side))continue;
-    const lane=side*(5.2+rand()*1.5),frame=starryRoadFrame(s,lane),h=2.4+rand()*1.4;
-    const tree=new THREE.Group();tree.position.set(frame.x,groundAt(frame.x,s),frame.z);
-    const trunk=new THREE.Mesh(trunkGeo,trunkMat);trunk.scale.set(.05,h,.05);trunk.position.y=h*.5;tree.add(trunk);
-    for(let n=0;n<3;n++){
-      const twig=new THREE.Mesh(trunkGeo,twigMat),reach=.28+rand()*.22,lean=(n-1)*.7;
-      twig.scale.set(.02,reach,.02);twig.position.set(Math.sin(lean)*.08,h*.78,0);twig.rotation.z=lean*.4;tree.add(twig);
+  const vergePos=[],vergeIndex=[];
+  for(let s=STARRY.revealEnd-4,row=0;s<=STARRY.releaseStart+4;s+=step,row++){
+    for(const side of [-1,1])for(const edge of [half+.12,9]){
+      const frame=starryPaintedFrame(s,side*edge);
+      vergePos.push(frame.x,Math.max(heightAt(s)+.02,groundAt(frame.x,s)+.012),frame.z);
     }
-    trees.add(tree);treeSpots.push({s,lane,x:frame.x,z:frame.z});
+    if(s+step<=STARRY.releaseStart+4){const a=row*4;vergeIndex.push(a,a+1,a+4,a+1,a+5,a+4,a+2,a+3,a+6,a+3,a+7,a+6);}
   }
+  const vergeGeo=keep(new THREE.BufferGeometry());
+  vergeGeo.setAttribute('position',new THREE.Float32BufferAttribute(vergePos,3));vergeGeo.setIndex(vergeIndex);vergeGeo.computeVertexNormals();
+  const verge=new THREE.Mesh(vergeGeo,vergeMat);verge.name='Village floor';verge.receiveShadow=true;group.add(verge);
+  const brickColors=['#c48474','#d2ae62','#7f97b0','#e0a8b6','#86a894','#efe4d2'].map(c=>new THREE.Color(c));
+  const brickSpots=[];
+  for(let s=STARRY.revealEnd,n=0;s<=STARRY.releaseStart;s+=.7,n++){
+    const frame=starryPaintedFrame(s,0);
+    brickSpots.push({x:frame.x,y:heightAt(s)+.055,z:frame.z,yaw:Math.atan2(frame.fx,frame.fz),color:brickColors[n%brickColors.length]});
+  }
+  const box=keep(new THREE.BoxGeometry(1,1,1));
+  const bricks=new THREE.InstancedMesh(box,brickMat,Math.max(1,brickSpots.length));bricks.name='Painted brick center';
+  brickSpots.forEach((spot,i)=>{dummy.position.set(spot.x,spot.y,spot.z);dummy.rotation.set(0,spot.yaw,0);dummy.scale.set(.3,.04,.55);dummy.updateMatrix();bricks.setMatrixAt(i,dummy.matrix);bricks.setColorAt(i,tint.set(spot.color));});
+  if(brickSpots.length)bricks.instanceColor.needsUpdate=true;group.add(bricks);
+  const stoneColors=['#e07a62','#f0c14a','#f2a3b8','#8ea4b8','#d9d3c7','#7faf9a','#e6b07a','#c46b58'];
+  const stoneSpots=[],wallTops=[];
+  for(let s=STARRY.revealEnd+2;s<=STARRY.releaseStart-2;s+=.34)for(const side of [-1,1]){
+    const crest=.28+.24*(.5+.5*Math.sin(s*.085+side*1.7));
+    wallTops.push(crest);
+    const courses=1+Math.floor(crest/.22);
+    for(let course=0;course<courses;course++){
+      const lane=side*(half+.72+course*.06+(rand()-.5)*.04);
+      const frame=starryPaintedFrame(s+(course%2)*.16,lane);
+      const radius=.2+.04*rand();
+      stoneSpots.push({x:frame.x,y:Math.max(heightAt(s),groundAt(frame.x,s))+.08+course*.16,z:frame.z,r:.16,sx:.46,sy:.16,sz:.32,s,lane,color:stoneColors[(course+Math.floor(s))%stoneColors.length]});
+    }
+  }
+  const stoneGeo=keep(new THREE.BoxGeometry(1,1,1));
+  const stones=new THREE.InstancedMesh(stoneGeo,stoneMat,stoneSpots.length);stones.name='Colored pebble wall';
+  stoneSpots.forEach((spot,i)=>{dummy.position.set(spot.x,spot.y,spot.z);dummy.scale.set(spot.sx,spot.sy,spot.sz);dummy.rotation.set(0,spot.s*.3,0);dummy.updateMatrix();stones.setMatrixAt(i,dummy.matrix);stones.setColorAt(i,tint.set(spot.color));});
+  stones.instanceColor.needsUpdate=true;group.add(stones);
+  const village=new THREE.Group();village.name='Painted cottages';group.add(village);
+  const houseWalls=[],houses=[];
+  const plans=[
+    {s:4688,side:1,homes:[[5.2,4,1],[6.6,-6,.85],[5.8,12,.75],[7.4,8,.7]]},
+    {s:4668,side:-1,homes:[[5.0,-4,1],[6.8,3,.85],[5.7,10,.7]]},
+    {s:4748,side:1,homes:[[4.9,0,1.05],[6.6,7,.8],[7.8,-6,.7]]},
+    {s:4588,side:-1,homes:[[5.1,2,.95],[6.9,-5,.75]]},
+  ];
+  const palette=['#e39a62','#f0c24a','#e7a0b0','#8f9eb0','#d98a6a','#e6b07a'];
+  function cottage(s,lane,scale){
+    const frame=starryPaintedFrame(s,lane),center=starryPaintedFrame(s,0);
+    const w=(2.1+rand()*.8)*scale,d=(1.7+rand()*.4)*scale,h=(1.8+rand()*.7)*scale;
+    const wall=wallMat.clone();wall.color.set(palette[houses.length%palette.length]);track(wall);houseWalls.push(wall);
+    const home=new THREE.Group();
+    home.position.set(frame.x,heightAt(s),frame.z);
+    home.rotation.y=Math.atan2(center.x-frame.x,center.z-frame.z);
+    const body=new THREE.Mesh(box,wall);body.scale.set(w,h,d);body.position.y=h*.5;body.castShadow=true;body.receiveShadow=true;
+    const roofL=new THREE.Mesh(box,roofMat);roofL.scale.set(w*1.16,.2,d*1.12);roofL.position.set(0,h+.12,0);
+    const door=new THREE.Mesh(box,doorMat);door.scale.set(.38,.72,.05);door.position.set((rand()-.5)*.25,.4,d*.5+.03);
+    const win=new THREE.Mesh(box,windowMat);win.scale.set(.36,.34,.05);win.position.set(.48,h*.62,d*.5+.03);
+    const win2=win.clone();win2.position.x=-.48;
+    const post=new THREE.Mesh(box,trimMat);post.scale.set(.06,h,d*1.02);post.position.set(w*.5,h*.5,0);
+    const post2=post.clone();post2.position.x=-w*.5;
+    home.add(body,roofL,door,win,win2,post,post2);village.add(home);
+    houses.push({s,lane,x:frame.x,z:frame.z,h});
+  }
+  for(const plan of plans)for(const [lane,ds,scale] of plan.homes)cottage(plan.s+ds,plan.side*lane,scale);
+  const trunkGeo=keep(new THREE.CylinderGeometry(.5,.7,1,6));
+  const trees=new THREE.Group();trees.name='Leafless ink trees';group.add(trees);
+  const treeSpots=[];
+  function limb(parent,a,b,r,mat){
+    const mesh=new THREE.Mesh(trunkGeo,mat),dir=new THREE.Vector3(b[0]-a[0],b[1]-a[1],b[2]-a[2]);
+    const len=Math.max(.05,dir.length());
+    mesh.position.set((a[0]+b[0])*.5,(a[1]+b[1])*.5,(a[2]+b[2])*.5);
+    mesh.scale.set(r,len,r);mesh.quaternion.setFromUnitVectors(up,dir.multiplyScalar(1/len));parent.add(mesh);
+  }
+  for(let i=0;i<14;i++){
+    const s=STARRY.revealEnd+12+(STARRY.releaseStart-STARRY.revealEnd-24)*(i/13);
+    const side=i%2?-1:1;
+    if(houses.some(home=>Math.abs(home.s-s)<4.5&&Math.sign(home.lane)===side))continue;
+    const lane=side*(3.7+rand()*1.1),frame=starryPaintedFrame(s,lane),h=2.8+rand()*1.6;
+    const tree=new THREE.Group();tree.position.set(frame.x,heightAt(s),frame.z);
+    const fork=h*.58,crown=h*.95;
+    limb(tree,[0,0,0],[0,fork,0],.055,trunkMat);
+    const left=[side*-.15,fork,.02],right=[side*.22,fork+.05,-.04];
+    limb(tree,left,[-side*.7,crown,.22],.04,trunkMat);
+    limb(tree,right,[side*.75,crown-.02,-.16],.038,trunkMat);
+    limb(tree,[-side*.7,crown,.22],[-side*1.05,h*1.15,.4],.022,twigMat);
+    limb(tree,[-side*.7,crown,.22],[-side*.45,h*1.2,-.08],.02,twigMat);
+    limb(tree,[side*.75,crown-.02,-.16],[side*1.15,h*1.1,-.3],.02,twigMat);
+    limb(tree,[side*.75,crown-.02,-.16],[side*.5,h*1.22,.1],.018,twigMat);
+    trees.add(tree);treeSpots.push({s,lane,x:frame.x,z:frame.z,branches:6});
+  }
+  const skyTexture=canvasTexture(paintSky,1024,512);
+  const skyMat=track(new THREE.MeshBasicMaterial({color:skyTexture?'#ffffff':'#091428',map:skyTexture,fog:false,transparent:true,depthWrite:false,side:THREE.DoubleSide}));
+  const skyRig=new THREE.Group();skyRig.name='Starry sky rig';group.add(skyRig);
   const domeMat=track(new THREE.MeshBasicMaterial({color:'#091428',side:THREE.BackSide,fog:false,transparent:true,depthWrite:false}));
-  const dome=new THREE.Mesh(keep(new THREE.SphereGeometry(150,28,18)),domeMat);dome.name='Hand-painted night sky';
-  const starGeo=keep(new THREE.SphereGeometry(1,6,5)),starMat=track(new THREE.MeshBasicMaterial({color:'#fff6e4',fog:false,transparent:true,depthWrite:false}));
-  const starCount=180,stars=new THREE.InstancedMesh(starGeo,starMat,starCount);stars.name='Night stars';
-  for(let i=0;i<starCount;i++){
-    const across=(rand()-.35)*1.7,ahead=.15+rand()*.55,up=.4+rand()*.9,radius=110,size=.16+rand()*.18;
-    const len=Math.hypot(across,ahead,up);
-    dummy.position.set(-across/len*radius,up/len*radius,-ahead/len*radius);
-    dummy.scale.setScalar(size);dummy.updateMatrix();stars.setMatrixAt(i,dummy.matrix);
-    stars.setColorAt(i,tint.set(['#fff4d2','#f7d7e4','#d5e4ff','#fffaf0'][i%4]));
-  }
-  stars.instanceColor.needsUpdate=true;dome.add(stars);
-  const moon=new THREE.Mesh(keep(new THREE.SphereGeometry(2.2,24,18)),track(new THREE.MeshBasicMaterial({color:STARRY_LIGHT.moon,fog:false,transparent:true,depthWrite:false})));
-  moon.name='Yellow moon';moon.position.set(-9,9,-30);dome.add(moon);
-  group.add(dome);
-  const villageMaterials=[brickMat,stoneMat,outlineMat,skirtMat,...houseWalls,roofMat,trimMat,windowMat,trunkMat,twigMat];
-  const villageObjects=[bricks,stones,outlines,skirt,village,trees];
-  group.userData.samples={stones:stoneSpots,houses,trees:treeSpots,texture:'procedural-sky'};
+  const dome=new THREE.Mesh(keep(new THREE.SphereGeometry(120,20,12)),domeMat);dome.name='Night fill';skyRig.add(dome);
+  const nebula=new THREE.Mesh(keep(new THREE.PlaneGeometry(58,28)),skyMat);nebula.name='Curling night nebula';nebula.position.set(0,6.5,-20);skyRig.add(nebula);
+  const moon=new THREE.Mesh(keep(new THREE.SphereGeometry(1.35,20,16)),track(new THREE.MeshBasicMaterial({color:STARRY_LIGHT.moon,fog:false,transparent:true,depthWrite:false})));
+  moon.name='Yellow moon';moon.position.set(-3.2,6.2,-16);skyRig.add(moon);
+  const villageMaterials=[vergeMat,brickMat,stoneMat,...houseWalls,roofMat,trimMat,windowMat,doorMat,trunkMat,twigMat];
+  const villageObjects=[verge,bricks,stones,village,trees];
+  group.userData.samples={stones:stoneSpots,houses,trees:treeSpots,texture:skyTexture?'procedural-sky':'flat-color',roadHalf:half,wallTops,clusters:plans.length,moon:{x:-3.2,y:6.2,z:-16}};
   group.visible=false;
-  return {group,road,dome,update(view,anchor,chunks){
+  return {group,road,dome,nebula,moon,update(view,anchor,chunks){
     const show=view.connect>.002||view.distant>.002||view.village>.002;
     group.visible=show;
-    applyFade([roadMat],[road],view.connect);
+    applyFade([roadMat],[road],Math.max(view.connect,view.village));
     applyFade(villageMaterials,villageObjects,view.village);
-    dome.visible=view.distant>.002;domeMat.opacity=view.distant;moon.material.opacity=view.distant;
-    stars.visible=view.distant>.02;starMat.opacity=view.distant;
-    if(anchor){const frame=starryRoadFrame(anchor.s,0);dome.position.set(frame.x,anchor.y+2,frame.z);dome.rotation.y=Math.atan2(-frame.fx,-frame.fz);}
+    const skyOn=view.distant>.002;
+    dome.visible=nebula.visible=moon.visible=skyOn;
+    domeMat.opacity=view.distant;skyMat.opacity=view.distant;moon.material.opacity=view.distant;
+    if(anchor){
+      const frame=starryPaintedFrame(anchor.s,0);
+      skyRig.position.set(frame.x,anchor.y,frame.z);
+      skyRig.rotation.y=Math.atan2(-frame.fx,-frame.fz);
+    }
     fadeCountryside(chunks,view.village);
   },dispose(){scene.remove(group);for(const g of geometries)g.dispose();for(const m of materials){m.map?.dispose();m.dispose();}}};
 }
+
 export function createStarryPainter(scene,bike){
   bike.traverse(obj=>{if(!obj.isMesh)return;const list=[].concat(obj.material).map(m=>m.clone());obj.material=Array.isArray(obj.material)?list:list[0];});
   const root=new THREE.Group();root.name='Roadside painter';scene.add(root);root.add(bike);

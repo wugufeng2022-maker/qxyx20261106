@@ -12,7 +12,7 @@ import { createDuckEvent, updateDuckEvent, canChooseDuckWait, chooseDuckWait, le
 import {createEncounterDirector,updateEncounterDirector} from './encounter-director.js';
 import {createArtistEvent,createArtist,updateArtist,inviteArtist,leaveArtist,canInviteArtist} from './artist.js';
 import {createPaintingWorld,paintingWeight,choosePainting,wantsPainting} from './painting.js';
-import {applyStarrySky,canEnterStarry,createStarryEvent,createStarryPainter,createStarryWorld,enterStarry,leaveStarry,skipStarry,STARRY,STARRY_LIGHT,starryView,updateStarry} from './starry-village.js';
+import {applyStarrySky,canEnterStarry,createStarryEvent,createStarryPainter,createStarryWorld,enterStarry,leaveStarry,skipStarry,STARRY,STARRY_LIGHT,starryBend,starryRoadFrame,starryView,updateStarry} from './starry-village.js';
 import {loadJourney,remember,unlockPainting,MEMORY_LABELS} from './journey.js';
 import {createRabbitEvent,inviteRabbit,updateRabbitEvent,createRabbitHome,RABBIT_HOME} from './rabbit-event.js';
 import {createRabbit} from './rabbit.js';
@@ -117,7 +117,7 @@ environment.position.y = 0; // Keep the original height of the lighting rig.
 const envTarget = pmrem.fromScene(environment, .04);scene.environment = envTarget.texture;scene.environmentIntensity = .38;
 environment.dispose();pmrem.dispose();
 const ambientLight = new THREE.HemisphereLight('#fff2d4', '#829363', 2.1);scene.add(ambientLight);
-const starryBackground=new THREE.Color(STARRY_LIGHT.background),starryAmbient=new THREE.Color(STARRY_LIGHT.ambient),starryGround=new THREE.Color(STARRY_LIGHT.ground),starryMoonColor=new THREE.Color(STARRY_LIGHT.moon),starryMoon=new THREE.Vector3();
+const starryBackground=new THREE.Color(STARRY_LIGHT.background),starryAmbient=new THREE.Color(STARRY_LIGHT.ambient),starryGround=new THREE.Color(STARRY_LIGHT.ground),starryMoonColor=new THREE.Color(STARRY_LIGHT.moon),starryMoon=new THREE.Vector3(),starryAhead=new THREE.Vector3();
 const sun = new THREE.DirectionalLight('#fff0ce', 3);sun.position.set(-30, 45, -25);sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);sun.shadow.camera.left = -24;sun.shadow.camera.right = 24;sun.shadow.camera.top = 24;sun.shadow.camera.bottom = -24;sun.shadow.camera.near = 1;sun.shadow.camera.far = 130;sun.shadow.normalBias = .035;sun.shadow.bias = -.0001;
 scene.add(sun, sun.target);
@@ -420,15 +420,22 @@ function frame(now) {
   scene.background.set('#dce7d0').lerp(new THREE.Color('#dce1de'),paintingAmount).lerp(new THREE.Color('#ecdfcd'),bayLight*.65);scene.background.lerp(new THREE.Color('#c9dfe0'),lakeLook*.65).lerp(new THREE.Color('#b3c0ae'),tunnel.shade*.30);
   scene.background.lerp(new THREE.Color('#afc4a9'),forestShade*.72).lerp(new THREE.Color('#e4d3a6'),gold*.28).lerp(starryBackground,starry.distant);
   scene.fog.color.copy(scene.background);
-  scene.fog.near=THREE.MathUtils.lerp(65-forestShade*42,STARRY_LIGHT.fogNear,starry.distant);
-  scene.fog.far=THREE.MathUtils.lerp(220-forestShade*107,STARRY_LIGHT.fogFar,starry.distant);
+  scene.fog.near=THREE.MathUtils.lerp(65-forestShade*42,THREE.MathUtils.lerp(34,STARRY_LIGHT.fogNear,starry.village),starry.distant);
+  scene.fog.far=THREE.MathUtils.lerp(220-forestShade*107,THREE.MathUtils.lerp(STARRY_LIGHT.blueFogFar,STARRY_LIGHT.fogFar,starry.village),starry.distant);
   sky.cloud.material.color.set('#faf5db').lerp(new THREE.Color('#f2dfce'),paintingAmount);
   $('world').dataset.paintingAmount=paintingAmount.toFixed(3);
   $('world').dataset.starryConnect=starry.connect.toFixed(3);$('world').dataset.starryDistant=starry.distant.toFixed(3);$('world').dataset.starryVillage=starry.village.toFixed(3);
   if (model && Math.floor(s / CHUNK_LENGTH) !== lastChunk) { updateChunks();lastChunk = Math.floor(s / CHUNK_LENGTH); }
   forward.set(tangentAt(s), 0, -1).normalize();right.set(-forward.z, 0, forward.x);
+  const rideBend=starryBend(s)*starry.village,rideFrame=starryRoadFrame(s,state.lane+rideBend);
+  if(starry.village>.001){
+    const next=starryRoadFrame(s+2,state.lane+starryBend(s+2)*starry.village);
+    starryAhead.set(next.x-rideFrame.x,0,next.z-rideFrame.z);
+    if(starryAhead.lengthSq()>1e-8)forward.lerp(starryAhead.normalize(),starry.village).normalize();
+    right.set(-forward.z,0,forward.x);
+  }
   const frontHeight=roadRelief(s+.52,state.lane),rearHeight=roadRelief(s-.52,state.lane);
-  vehicle.position.set(roadX + right.x * state.lane, y + .025 + (frontHeight+rearHeight)*.5, -s + right.z * state.lane);
+  vehicle.position.set(rideFrame.x, y + .025 + (frontHeight+rearHeight)*.5, rideFrame.z);
   starryWorld.update(starry,{x:roadX,y,s},chunks.values());starryPainter?.update(starryEvent,s,starry,elapsed);
   if(Math.abs(state.lane)>roadHalfWidthAt(s))vehicle.position.y=groundAt(vehicle.position.x,-vehicle.position.z)+.025;
   const yaw = Math.atan2(-forward.z, forward.x) - state.turn * .10;
