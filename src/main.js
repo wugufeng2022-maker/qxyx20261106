@@ -117,7 +117,7 @@ environment.position.y = 0; // Keep the original height of the lighting rig.
 const envTarget = pmrem.fromScene(environment, .04);scene.environment = envTarget.texture;scene.environmentIntensity = .38;
 environment.dispose();pmrem.dispose();
 const ambientLight = new THREE.HemisphereLight('#fff2d4', '#829363', 2.1);scene.add(ambientLight);
-const starryBackground=new THREE.Color(STARRY_LIGHT.background),starryAmbient=new THREE.Color(STARRY_LIGHT.ambient),starryGround=new THREE.Color(STARRY_LIGHT.ground),starryMoonColor=new THREE.Color(STARRY_LIGHT.moon),starryMoon=new THREE.Vector3(),starryAhead=new THREE.Vector3();
+const starryBackground=new THREE.Color(STARRY_LIGHT.background),starryHorizon=new THREE.Color(STARRY_LIGHT.horizon),starryAmbient=new THREE.Color(STARRY_LIGHT.ambient),starryGround=new THREE.Color(STARRY_LIGHT.ground),starryMoonColor=new THREE.Color(STARRY_LIGHT.moon),starryMoon=new THREE.Vector3(),starryAhead=new THREE.Vector3();
 const sun = new THREE.DirectionalLight('#fff0ce', 3);sun.position.set(-30, 45, -25);sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);sun.shadow.camera.left = -24;sun.shadow.camera.right = 24;sun.shadow.camera.top = 24;sun.shadow.camera.bottom = -24;sun.shadow.camera.near = 1;sun.shadow.camera.far = 130;sun.shadow.normalBias = .035;sun.shadow.bias = -.0001;
 scene.add(sun, sun.target);
@@ -419,7 +419,7 @@ function frame(now) {
   const landscape=landscapeAt(s),bayLight=landscape.bay||0,valleyLight=landscape.valley||0,tunnel=tunnelProfile(s);
   scene.background.set('#dce7d0').lerp(new THREE.Color('#dce1de'),paintingAmount).lerp(new THREE.Color('#ecdfcd'),bayLight*.65);scene.background.lerp(new THREE.Color('#c9dfe0'),lakeLook*.65).lerp(new THREE.Color('#b3c0ae'),tunnel.shade*.30);
   scene.background.lerp(new THREE.Color('#afc4a9'),forestShade*.72).lerp(new THREE.Color('#e4d3a6'),gold*.28).lerp(starryBackground,starry.distant);
-  scene.fog.color.copy(scene.background);
+  scene.fog.color.copy(scene.background).lerp(starryHorizon,starry.distant);
   scene.fog.near=THREE.MathUtils.lerp(65-forestShade*42,THREE.MathUtils.lerp(34,STARRY_LIGHT.fogNear,starry.village),starry.distant);
   scene.fog.far=THREE.MathUtils.lerp(220-forestShade*107,THREE.MathUtils.lerp(STARRY_LIGHT.blueFogFar,STARRY_LIGHT.fogFar,starry.village),starry.distant);
   sky.cloud.material.color.set('#faf5db').lerp(new THREE.Color('#f2dfce'),paintingAmount);
@@ -554,7 +554,7 @@ function frame(now) {
   renderer.toneMappingExposure=THREE.MathUtils.lerp(.98*(1-tunnel.shade*.14),STARRY_LIGHT.exposure,starry.distant);
   if(import.meta.env.DEV){$('world').dataset.tunnelSeason=tunnel.name;$('world').dataset.tunnelShade=tunnel.shade.toFixed(3);}
   sun.position.set(roadX - 30 - gold*6, y + 45 - gold*14, -s - 25 + forest*6*Math.sin(s*.015));sun.target.position.copy(vehicle.position);
-  if(starry.distant>0){starryMoon.set(roadX-46,y+64,-s-16);sun.position.lerp(starryMoon,starry.distant);}
+  if(starry.distant>0){starryMoon.set(roadX-22,y+16,-s-40);sun.position.lerp(starryMoon,starry.distant);}
   hudTick += dt;
   if (hudTick > .15) {
     routeMap.update(s);

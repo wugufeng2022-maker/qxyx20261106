@@ -110,7 +110,23 @@ test('painted props stay off the rideable road and daytime props can fade withou
   assert.equal(world.dome.material.fog,false);
   assert.equal(world.moon.material.fog,false);
   world.group.traverse(obj=>{if(obj.geometry?.type==='PlaneGeometry')assert.ok(Math.max(obj.geometry.parameters.width,obj.geometry.parameters.height)<2,obj.name);});
-  assert.equal(world.group.userData.samples.texture,'sphere-sky');
+  assert.equal(world.group.userData.samples.texture,'dusk-gradient-sky');
+  assert.equal(world.dome.material.toneMapped,true);
+  assert.notEqual(world.moon.material.toneMapped,false);
+  world.group.traverse(obj=>assert.notEqual(obj.name,'Painted brick center'));
+  const skyColor=world.dome.geometry.attributes.color,skyPos=world.dome.geometry.attributes.position;
+  let darkest=1,horizonR=0,zenithR=0,horizonN=0,zenithN=0;
+  for(let i=0;i<skyColor.count;i++){
+    darkest=Math.min(darkest,skyColor.getX(i),skyColor.getY(i),skyColor.getZ(i));
+    const y=skyPos.getY(i);
+    if(y<8){horizonR+=skyColor.getX(i);horizonN++;}
+    if(y>120){zenithR+=skyColor.getX(i);zenithN++;}
+  }
+  assert.ok(darkest>.2,'dusk sky has a near-black sample');
+  assert.ok(horizonN&&zenithN&&horizonR/horizonN>zenithR/zenithN);
+  const light=new THREE.Color(STARRY_LIGHT.background),night=new THREE.Color('#07111f');
+  assert.ok(light.r+light.g+light.b>night.r+night.g+night.b+.8);
+  assert.ok(STARRY_LIGHT.fogFar>110&&STARRY_LIGHT.fogNear>28);
   const {stones,houses,trees,wallTops,clusters,moon,roadHalf}=world.group.userData.samples;
   assert.equal(roadHalf,2.15);
   assert.ok(stones.length>800&&stones.length<12000);
