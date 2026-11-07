@@ -12,6 +12,7 @@ import { inDuckCorridor } from './duck-event.js';
 import { addWildlife } from './wildlife.js';
 import { plantInstances } from './vegetation.js';
 import { centerAt, heightAt, groundAt, CHUNK_LENGTH, rng, roadSurface, roadRelief, openingVista, climbGrove, summitVista, landscapeAt, LAKE, lakeOffsetAt, lakeViewOpening, isDryLand, pondViewingGap } from './route.js';
+import {CLEAR_LAKE, CREEK_REACH, FOREST_RIDE, ROAD_HALF_WIDTH, forestGladeAt, forestGoldAt, forestRideWeight, roadHalfWidthAt, extendedWaterAt} from './route.js';
 
 const inFootpath=(x,s)=>courtyardExcludes(x,s)||catYardExcludes(x,s)||(s>1040&&s<1216&&x-centerAt(s)>2.2&&x-centerAt(s)<5.6);
 const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 1, ...extra });
@@ -51,20 +52,42 @@ function instances(group, geometry, material, points) {
 }
 function terrain(index) {
   // Include exact road/verge columns so coarse terrain triangles never cover the road.
-  const columns = [-150,-125,-105,-90,-78,-66,-56,-48,-40,-34,-28,-23,-19,-16,-13,-10,-8,-6,-4,-3,-2.2,0,2.2,3,4,6,8,10,13,16,19,23,28,34,40,48,56,66,78,90,105,125,150];
+  const coarse = [-150,-125,-105,-90,-78,-66,-56,-48,-40,-34,-28,-23,-19,-16,-13,-10,-8,-6,-4,-3,-2.2,0,2.2,3,4,6,8,10,13,16,19,23,28,34,40,48,56,66,78,90,105,125,150];
+  const shore=[CREEK_REACH,CLEAR_LAKE].find(reach=>(index+1)*CHUNK_LENGTH>reach.start&&index*CHUNK_LENGTH<reach.end);
+  const shoreStart=shore&&Math.floor(shore.start/CHUNK_LENGTH)*CHUNK_LENGTH;
+  const shoreEnd=shore&&Math.ceil(shore.end/CHUNK_LENGTH)*CHUNK_LENGTH;
+  const columns=shore?[...new Set([...coarse,...Array.from({length:31},(_,i)=>3.5+i*.5),20,21,22,24,25,26,27,29,30,31,32,33,
+    ...(shore===CLEAR_LAKE?Array.from({length:33},(_,i)=>35+i*2):[])])].sort((a,b)=>a-b):coarse;
+  const anchors=columns.map(d=>coarse.findLast(c=>c<=d));
   const length = CHUNK_LENGTH, nx = columns.length - 1, nz = 32, positions = [], colors = [], indices = [];
   for (let j = 0; j <= nz; j++) {
     const s = index * length + j / nz * length;
+    const water=extendedWaterAt(s);
+    const forest=forestRideWeight(s);
+    const gold=forest*forestGoldAt(s);
+    // Collapse extra subdivisions onto the existing vertices at the outside chunk seams.
+    const detail=shore?Math.min(1,(s-shoreStart)/16,(shoreEnd-s)/16):1;
     for (let i = 0; i <= nx; i++) {
-      const x = centerAt(s) + columns[i];
-      positions.push(x, groundAt(x, s) - .025, -s);
+      const d=anchors[i]+(columns[i]-anchors[i])*detail;
+      const x = centerAt(s) + d;
+      const ground=groundAt(x,s);
+      positions.push(x, ground - .025, -s);
       const variation = .90 + .10 * Math.sin(x * .11 + s * .07) * Math.cos(s * .09 - x * .03);
       const field = .5 + .5 * Math.sin(x * .052 + s * .018);
       const e=landscapeAt(s),green=e.uphill;
       if(s>3250){
         const wheat=e.wheat||0,valley=e.valley||0,bay=e.bay||0;
-        const p=scenicProfile(s),edge=Math.min(1,Math.abs(columns[i])/12),shade=(p.trees*.045-p.flowers*.020)*edge;
-        colors.push(variation*(1.02+wheat*.25-valley*.17+bay*.06-shade),variation*(1-wheat*.04-valley*.06-shade*.5),variation*(.83-wheat*.24-valley*.03+bay*.05-shade*.8));
+        const p=scenicProfile(s),edge=Math.min(1,Math.abs(d)/12),shade=(p.trees*.045-p.flowers*.020)*edge;
+        const bed=water&&water.kind!=='bay'&&d>3&&ground<water.level+.30;
+        if(bed){
+          const wet=Math.min(1,Math.max(0,(water.level+.30-ground)*(water.kind==='river'?1.5:.58)));
+          const mottling=.9+.10*Math.sin(s*3.3+x*4.9);
+          colors.push(variation*mottling*(1.05-.32*wet),variation*mottling*(.91-.32*wet),variation*mottling*(.78-.26*wet));
+        }else{
+          const moss=forest*(.78+.22*Math.sin(x*.7+s*.39)*Math.cos(s*.5-x*.21));
+          const leafLitter=gold*edge*(.07+.07*Math.sin(x*.47+s*.51));
+          colors.push(variation*(1.02+wheat*.25-valley*.17+bay*.06-shade-moss*.29+leafLitter),variation*(1-wheat*.04-valley*.06-shade*.5-moss*.16-leafLitter*.45),variation*(.83-wheat*.24-valley*.03+bay*.05-shade*.8-moss*.19-leafLitter*.85));
+        }
         continue;
       }
       const slopeLight = openingVista(s)*Math.min(1,Math.abs(columns[i])/16);
@@ -85,13 +108,15 @@ function ribbon(index, offset, width, material, lift) {
   const positions=[],indices=[],colors=[],steps=128,across=offset===0?12:2;
   for(let j=0;j<=steps;j++) {
     const s=index*CHUNK_LENGTH+j*CHUNK_LENGTH/steps;
+    const scale=roadHalfWidthAt(s)/ROAD_HALF_WIDTH;
+    const forest=forestRideWeight(s)*(1-.65*forestGladeAt(s));
     for(let i=0;i<=across;i++) {
-      const lane=offset+(i/across-.5)*width;
+      const lane=(offset+(i/across-.5)*width)*scale;
       const x=centerAt(s)+lane;
       positions.push(x,heightAt(s)+roadRelief(s,lane)+lift,-s);
       const rough=roadSurface(s,lane).roughness;
       const c=1-rough*.22+.025*Math.sin(s*2.1+lane*7);
-      colors.push(c,c*.98,c*.93);
+      colors.push(c*(1-forest*.20),c*(.98-forest*.23),c*(.93-forest*.27));
       if(j<steps&&i<across){const a=j*(across+1)+i,b=a+across+1;indices.push(a,a+1,b,a+1,b+1,b);}
     }
   }
@@ -102,7 +127,7 @@ function ribbon(index, offset, width, material, lift) {
 function roadGravel(group,index) {
   const random=rng(index*901+319),stones=[];
   for(let i=0;i<650;i++) {
-    const s=index*CHUNK_LENGTH+random()*CHUNK_LENGTH,lane=(random()-.5)*4.1;
+    const s=index*CHUNK_LENGTH+random()*CHUNK_LENGTH,lane=(random()-.5)*(roadHalfWidthAt(s)*2-.20);
     const rough=roadSurface(s,lane).roughness;
     if(random()>Math.max(0,(rough-.28)*1.4))continue;
     const size=.018+random()*.048;
@@ -278,14 +303,16 @@ function lakeShore(group,index) {
 export function createChunk(index) {
   const group = new THREE.Group();group.name = `Meadow_${index}`;
   const random = rng(index * 7177 + 51839);
-  group.add(terrain(index), ribbon(index, 0, 4.3, materials.road, .015));
+  const groundMesh=terrain(index);
+  groundMesh.receiveShadow=index*CHUNK_LENGTH<FOREST_RIDE.end&&(index+1)*CHUNK_LENGTH>FOREST_RIDE.start;
+  group.add(groundMesh, ribbon(index, 0, 4.3, materials.road, .015));
   group.add(ribbon(index, -.71, .46, materials.track, .018), ribbon(index, .71, .46, materials.track, .018));
   roadGravel(group,index);
   addStartCourtyard(group,index);
   addRegionalScenery(group,index);
   addScenicRhythm(group,index);
   addFlowerTunnel(group,index);
-  if(index*CHUNK_LENGTH>=3250){addExtendedScenery(group,index);addWildlife(group,index);return group;}
+  if(index*CHUNK_LENGTH>=3250){addExtendedScenery(group,index,groundMesh);addWildlife(group,index);return group;}
   const posts=[],rails=[],stones=[];
   const trees=Array.from({length:5},()=>[]);
   for(let grove=0;grove<8;grove++) {

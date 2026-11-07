@@ -26,6 +26,8 @@ import { createMusic } from './music.js';
 import { createWindAudio } from './wind-audio.js';
 import { centerAt, heightAt, groundAt, slopeAt, tangentAt, CHUNK_LENGTH, ROUTE_LENGTH, OPENING_AVENUES, LONG_HILL, updateRide, brakeRate, avenueShade, openingSideView, climbGrove, summitVista, roadSurface, roadRelief, landscapeAt } from './route.js';
 import { createChunk, disposeChunk, makeSky, setPaintingScenery } from './scenery.js';
+import { updateWaterside } from './creek.js';
+import { CLEAR_LAKE, FOREST_RIDE, clearLakeViewWeight, creeksideWeight, forestGladeAt, forestGoldAt, forestRideWeight, roadHalfWidthAt } from './route.js';
 import { createRider } from './rider.js';
 import {createPassingRide,createPassingRiders,updatePassingRide,passingViewWeight} from './passing-riders.js';
 import {translateRideCamera} from './camera-follow.js';
@@ -36,7 +38,15 @@ import { loadVegetation, updateVegetation, setPaintingVegetation } from './veget
 const $ = id => document.getElementById(id);
 let preview={at:0,painting:false,natural:false,rabbit:false,cat:false};
 let previewModule;
-const previewLake=import.meta.env.DEV&&new URLSearchParams(location.search).has('previewLake');
+const routeParams=new URLSearchParams(location.search);
+const rideEntry={
+  creek:{at:5280,label:'出发，去溪边骑一段 →'},
+  lake:{at:CLEAR_LAKE.rideStart,label:'出发，去清湖边骑一段 →'},
+  forest:{at:FOREST_RIDE.rideStart,label:'出发，去森林里骑一段 →'},
+};
+const ride=routeParams.get('ride');
+const entry=Object.hasOwn(rideEntry,ride)?rideEntry[ride]:null;
+const previewLake=import.meta.env.DEV&&routeParams.has('previewLake');
 if(import.meta.env.DEV){previewModule=await import('./dev-preview.js');preview=previewModule.readPreview(location.search);}
 function storageUnavailable(){$('memory-storage-status').textContent='暂时无法保存 · 本次旅程仍会记得';}
 const memoryStorage={getItem(key){try{return localStorage.getItem(key);}catch(e){storageUnavailable();throw e;}},setItem(key,value){try{localStorage.setItem(key,value);}catch(e){storageUnavailable();throw e;}}};
@@ -48,9 +58,9 @@ if(import.meta.env.DEV&&new URLSearchParams(location.search).has('previewMemorie
 function refreshMemories(){const entries=Object.keys(MEMORY_LABELS).filter(k=>journey.memories[k]);$('memory-list').textContent=entries.length?entries.map(k=>MEMORY_LABELS[k]).join('\n'):'相遇会留在这本小册子里。';}
 refreshMemories();
 const music=createMusic($('background-music'),$('music'));
-const state = { started: false, paused: false, auto: true, speed: 0, distance: 0, lane: 0, turn: 0, view: 0, walking:false, walkRequested:false, rideMode:'leisure', fastRequested:false, pointerSteer:0, pondWatching:false };
+const state = { started: false, paused: false, auto: true, speed: 0, distance: entry?.at??0, lane: 0, turn: 0, view: 0, walking:false, walkRequested:false, rideMode:'leisure', fastRequested:false, pointerSteer:0, pondWatching:false };
 // Preview selection is transient and never changes saved theme preferences.
-if(import.meta.env.DEV){state.distance=preview.at;paintBlend=preview.painting?1:0;}
+if(import.meta.env.DEV&&(!entry||routeParams.has('previewAt'))){state.distance=preview.at;paintBlend=preview.painting?1:0;}
 let soundEnabled = true;
 try { soundEnabled = localStorage.getItem('meadow-sound') !== 'off'; } catch {}
 const windAudio = createWindAudio(({enabled,state:audioState}) => {
@@ -151,7 +161,7 @@ Promise.all([new GLTFLoader().loadAsync(bikeURL), loadVegetation()]).then(([gltf
   bicycleStand=new THREE.Mesh(new THREE.CylinderGeometry(.016,.022,.58,7),new THREE.MeshStandardMaterial({color:'#7b806e',roughness:.9}));
   bicycleStand.name='Grass rest bicycle support';bicycleStand.position.set(-.24,.23,.25);bicycleStand.rotation.x=.38;bicycleStand.visible=false;model.add(bicycleStand);
   animalSeatRigs=createAnimalSeatRigs(model,steering);
-  $('start').disabled = false;$('start').textContent = '出发，去吹吹风 →';
+  $('start').disabled = false;$('start').textContent = entry?.label??'出发，去吹吹风 →';
   $('world').dataset.modelLoaded = 'true';
 }).catch(error => {
   console.error(error);document.body.classList.add('error');$('load-status').textContent = '场景加载失败，请刷新页面再试。';$('start').textContent = '刷新重试';$('start').disabled = false;$('start').onclick = () => location.reload();
@@ -363,14 +373,22 @@ function frame(now) {
   }
   if (!state.paused) elapsed += dt;
   updateVegetation(elapsed);
+  updateWaterside(elapsed);
   regionalLife.update(elapsed,state.distance,chunks.values());
   const viewportAspect=innerWidth/innerHeight;
   const s = state.distance, roadX = centerAt(s), y = heightAt(s);
   updatePassingRide(passingRide,{...state,dt});
   if(!state.paused)passingRiders?.update(passingRide,s,elapsed);
   if(import.meta.env.DEV)$('world').dataset.passingRide=passingRide.stations.map(at=>at.toFixed(2)).join(',');
-  const treeShade = Math.max(avenueShade(s),climbGrove(s)*.43);
-  const crestLight=summitVista(s),pondLook=pondSightline(s),grade=slopeAt(s);
+  const forest=forestRideWeight(s);
+  const glade=forest*forestGladeAt(s);
+  const gold=forest*forestGoldAt(s);
+  const forestShade=forest-glade*.75;
+  const treeShade = Math.max(avenueShade(s),climbGrove(s)*.43,forestShade*.84);
+  const lakeLook=clearLakeViewWeight(s);
+  const crestLight=summitVista(s),pondLook=pondSightline(s),creekLook=Math.max(creeksideWeight(s),lakeLook*.89),grade=slopeAt(s);
+  const creekPan=creekLook*Math.min(1,.60+viewportAspect*.25);
+  const creekPortrait=creekLook*(1-THREE.MathUtils.smoothstep(viewportAspect,.46,.95));
   const orchardLook=THREE.MathUtils.smoothstep(s,WALKER.start-38,WALKER.start-15)*(1-THREE.MathUtils.smoothstep(s,WALKER.end-1,WALKER.end+13));
   const farewellLook=walkerEvent.accompanied?1-THREE.MathUtils.smoothstep(walkerEvent.arrivalTime,1.8,4):0;
   const orchardCompanionLook=viewportAspect<.8?orchardLook*Math.max(walkBlend,farewellLook):0;
@@ -379,14 +397,18 @@ function frame(now) {
   if(!state.paused)paintBlend=THREE.MathUtils.damp(paintBlend,paintingRequested?1:0,1.2,dt);
   const paintingAmount=paintingWeight(s)*paintBlend;paintingWorld.update(paintingAmount);setPaintingScenery(paintingAmount);setPaintingVegetation(paintingAmount);
   const landscape=landscapeAt(s),bayLight=landscape.bay||0,valleyLight=landscape.valley||0,tunnel=tunnelProfile(s);
-  scene.background.set('#dce7d0').lerp(new THREE.Color('#dce1de'),paintingAmount).lerp(new THREE.Color('#ecdfcd'),bayLight*.65);scene.background.lerp(new THREE.Color('#b3c0ae'),tunnel.shade*.30);scene.fog.color.copy(scene.background);
+  scene.background.set('#dce7d0').lerp(new THREE.Color('#dce1de'),paintingAmount).lerp(new THREE.Color('#ecdfcd'),bayLight*.65);scene.background.lerp(new THREE.Color('#c9dfe0'),lakeLook*.65).lerp(new THREE.Color('#b3c0ae'),tunnel.shade*.30);
+  scene.background.lerp(new THREE.Color('#afc4a9'),forestShade*.72).lerp(new THREE.Color('#e4d3a6'),gold*.28);
+  scene.fog.color.copy(scene.background);
+  scene.fog.near=65-forestShade*42;
+  scene.fog.far=220-forestShade*107;
   sky.cloud.material.color.set('#faf5db').lerp(new THREE.Color('#f2dfce'),paintingAmount);
   $('world').dataset.paintingAmount=paintingAmount.toFixed(3);
   if (model && Math.floor(s / CHUNK_LENGTH) !== lastChunk) { updateChunks();lastChunk = Math.floor(s / CHUNK_LENGTH); }
   forward.set(tangentAt(s), 0, -1).normalize();right.set(-forward.z, 0, forward.x);
   const frontHeight=roadRelief(s+.52,state.lane),rearHeight=roadRelief(s-.52,state.lane);
   vehicle.position.set(roadX + right.x * state.lane, y + .025 + (frontHeight+rearHeight)*.5, -s + right.z * state.lane);
-  if(Math.abs(state.lane)>2.15)vehicle.position.y=groundAt(vehicle.position.x,-vehicle.position.z)+.025;
+  if(Math.abs(state.lane)>roadHalfWidthAt(s))vehicle.position.y=groundAt(vehicle.position.x,-vehicle.position.z)+.025;
   const yaw = Math.atan2(-forward.z, forward.x) - state.turn * .10;
   vehicle.rotation.set(0, yaw, 0);
   if (model) {
@@ -417,25 +439,31 @@ function frame(now) {
     cameraDesired.copy(vehicle.position).addScaledVector(forward,-6.1-pondPullback).addScaledVector(right,Math.min(2.5,Math.max(.7,viewportAspect*1.45)));cameraDesired.y += 3.1;
     // Keep the follow lens level relative to the rider so it reveals the grade
     // instead of pitching parallel to the road and visually flattening the hill.
-    look.copy(vehicle.position).addScaledVector(forward,5+5*pondLook).addScaledVector(right,3.4*pondLook-1.25*orchardLook);look.y += .85;
-    cameraDesired.y+=.60*pondLook;
+    look.copy(vehicle.position).addScaledVector(forward,5+5*pondLook+2*creekLook).addScaledVector(right,3.4*pondLook-1.25*orchardLook+2.45*creekPan);look.y += .85;
+    cameraDesired.y+=.60*pondLook+.40*creekLook;
   } else if (state.view === 1) {
     const normalOffset = tunnelCameraOffset(s,viewportAspect);
     const openingOffset = openingSideView(s,normalOffset);
-    const offset=THREE.MathUtils.lerp(openingOffset,Math.min(openingOffset,4.1),climbGrove(s));
+    const groveOffset=THREE.MathUtils.lerp(openingOffset,Math.min(openingOffset,4.1),climbGrove(s));
+    const offset=THREE.MathUtils.lerp(groveOffset,Math.min(groveOffset,2.9),THREE.MathUtils.smoothstep(forest,0,.34));
     sideZoom = Math.hypot(normalOffset,.7,.63)/Math.hypot(offset,.7,.63);
     const villageLook=THREE.MathUtils.smoothstep(s,CAT_HOME-84,CAT_HOME-61)*(1-THREE.MathUtils.smoothstep(s,CAT_HOME-11,CAT_HOME+20));
     const passingLook=passingViewWeight(passingRide,s);
-    const forwardLook=Math.max(villageLook,pondLook,.7*crestLight,orchardLook,passingLook);
-    const sideOffset=THREE.MathUtils.lerp(offset,Math.min(2.6,Math.max(1.1,viewportAspect*1.8)),forwardLook);
-    cameraDesired.copy(vehicle.position).addScaledVector(forward,THREE.MathUtils.lerp(.7,-5.5,forwardLook)).addScaledVector(right,sideOffset);
-    cameraDesired.y+=1.65+forwardLook*1.10+.55*pondLook;
+    const narrowFrame=1-THREE.MathUtils.smoothstep(viewportAspect,.70,1.20);
+    const creekSideAim=THREE.MathUtils.lerp(creekLook,creekLook**1.5,narrowFrame);
+    const forwardLook=Math.max(villageLook,pondLook,.7*crestLight,orchardLook,passingLook,creekSideAim);
+    // Pull back before looking down the creek so a narrow frame still includes the cyclist.
+    const sidePullback=Math.max(forwardLook,narrowFrame*THREE.MathUtils.smoothstep(creekLook,0,.40));
+    const sideOffset=THREE.MathUtils.lerp(offset,Math.min(2.6,Math.max(1.1,viewportAspect*1.8)),sidePullback);
+    cameraDesired.copy(vehicle.position).addScaledVector(forward,THREE.MathUtils.lerp(.7,-5.5,sidePullback)).addScaledVector(right,sideOffset);
+    cameraDesired.y+=1.65+sidePullback*1.10+.55*pondLook;
     if(viewportAspect<.8)cameraDesired.y=Math.max(cameraDesired.y,groundAt(cameraDesired.x,-cameraDesired.z)+1.2);
+    const creekSidePan=2.2*creekPan*THREE.MathUtils.lerp(1,.75*Math.sqrt(creekLook),narrowFrame);
     look.copy(vehicle.position).addScaledVector(forward,7.4*forwardLook)
-      .addScaledVector(right,4.8*pondLook-1.4*orchardLook+passingRide.side*1.5*passingLook);look.y += 1.02;
+      .addScaledVector(right,4.8*pondLook-1.4*orchardLook+passingRide.side*1.5*passingLook+creekSidePan);look.y += 1.02;
   } else {
     cameraDesired.copy(vehicle.position).addScaledVector(forward, -.4).addScaledVector(right,-.48*walkBlend);cameraDesired.y += 1.40;
-    look.copy(vehicle.position).addScaledVector(forward,15).addScaledVector(right,4.6*pondLook-1.4*orchardLook);look.y += 1.12+heightAt(s+15)-y;
+    look.copy(vehicle.position).addScaledVector(forward,15).addScaledVector(right,4.6*pondLook-1.4*orchardLook+3.1*creekPan-1.45*creekPortrait);look.y += 1.12+heightAt(s+15)-y;
     cameraDesired.y+=.20*pondLook;
   }
   if(orchardCompanionLook>0){
@@ -478,7 +506,8 @@ function frame(now) {
   const ridingFov = sideZoom===1 || locked ? baseFov : THREE.MathUtils.radToDeg(2*Math.atan(Math.tan(THREE.MathUtils.degToRad(baseFov*.5))*sideZoom));
   const nearPondFov=watchingPondLens?8*THREE.MathUtils.smoothstep(s,2935,2944):0;
   const watchFov=viewportAspect<.8?53+nearPondFov:49;
-  const fieldOfView = THREE.MathUtils.lerp(ridingFov+pondLook*(viewportAspect<.8?13:2)+orchardLook*(viewportAspect<.8?7:2)+5*orchardCompanionLook,watchFov,duckWatchBlend);
+  const creekPortraitFov=creekPortrait*(state.view===2?11:5);
+  const fieldOfView = THREE.MathUtils.lerp(ridingFov+pondLook*(viewportAspect<.8?13:2)+orchardLook*(viewportAspect<.8?7:2)+5*orchardCompanionLook+creekPortraitFov,watchFov,duckWatchBlend);
   if (Math.abs(camera.fov-fieldOfView)>.001) { camera.fov = fieldOfView;camera.updateProjectionMatrix(); }
   if(firstFrame)previousRidePosition.copy(vehicle.position);
   else translateRideCamera(camera.position,lookSmooth,previousRidePosition,vehicle.position);
@@ -488,16 +517,16 @@ function frame(now) {
   sky.ridgeClouds.rotation.y=elapsed*.00012;
   ambientLight.intensity = 2.1 - treeShade*.65 - landscape.uphill*.28 - valleyLight*.40 - paintingAmount*.40 - tunnel.shade*.68 + crestLight*.11;
   ambientLight.groundColor.set('#829363').lerp(new THREE.Color('#8995b6'),paintingAmount);
-  sun.color.set('#fff0ce').lerp(new THREE.Color('#ffe1a6'),paintingAmount).lerp(new THREE.Color('#ffd7aa'),bayLight*.65);
-  sun.intensity=(3+paintingAmount*.45)*(1-tunnel.shade*.60)*(1-treeShade*.08);
+  sun.color.set('#fff0ce').lerp(new THREE.Color('#ffe1a6'),paintingAmount).lerp(new THREE.Color('#ffd7aa'),bayLight*.65).lerp(new THREE.Color('#ffd28a'),gold*.57+glade*.18);
+  sun.intensity=(3+paintingAmount*.45)*(1-tunnel.shade*.60)*(1-treeShade*.08)*(1-forestShade*.14+glade*.18+gold*.08);
   renderer.toneMappingExposure=.98*(1-tunnel.shade*.14);
   if(import.meta.env.DEV){$('world').dataset.tunnelSeason=tunnel.name;$('world').dataset.tunnelShade=tunnel.shade.toFixed(3);}
-  sun.position.set(roadX - 30, y + 45, -s - 25);sun.target.position.copy(vehicle.position);
+  sun.position.set(roadX - 30 - gold*6, y + 45 - gold*14, -s - 25 + forest*6*Math.sin(s*.015));sun.target.position.copy(vehicle.position);
   hudTick += dt;
   if (hudTick > .15) {
     routeMap.update(s);
     const avenue = OPENING_AVENUES.find(({start,end})=>s>=start && s<end);
-    const place = s<START_COURTYARD.to ? '起点小院' : avenue?.label ?? landscape.label;
+    const place = s<START_COURTYARD.to ? '起点小院' : lakeLook>.25 ? '清湖岸边' : forest>.30 ? '森林小径' : avenue?.label ?? landscape.label;
     $('place-name').textContent=tumble.phase==='slowing'?'草地松软 · 可以回到小路':s>=ROUTE_LENGTH?'抵达湖湾 · 10 km':place+' · '+(roadSurface(s,state.lane).roughness>.5?'路边碎石':'慢慢骑行');
     $('speed').textContent = Math.round(state.speed * 3.6);$('distance').innerHTML = `${(s / 1000).toFixed(2)} <small>km</small>`;
     $('world').dataset.walking=String(state.walking);$('world').dataset.walkBlend=walkBlend.toFixed(3);

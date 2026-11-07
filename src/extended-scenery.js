@@ -1,10 +1,11 @@
 import {scenicProfile,scenicFlowerWeight} from './scenic-rhythm.js';
 import {inGrassZone,visibleGroundAt} from './grass-tumble.js';
 import * as THREE from 'three';
-import {centerAt,groundAt,heightAt,extendedLandscapeAt,extendedWaterAt,CHUNK_LENGTH,ROAD_HALF_WIDTH,rng} from './route.js';
+import {CLEAR_LAKE,FOREST_RIDE,centerAt,forestGladeAt,forestGoldAt,forestRideWeight,groundAt,heightAt,extendedLandscapeAt,extendedWaterAt,CHUNK_LENGTH,ROAD_HALF_WIDTH,rng} from './route.js';
 import {plantInstances} from './vegetation.js';
 import {paintSurface} from './painterly.js';
 import {WALKER,walkerLane,smooth,orchardPathExcludes} from './orchard-walk.js';
+import {addCreekWater,addClearLakeWater} from './creek.js';
 
 // Original low-poly field props; vegetation uses the existing licensed CC0 library.
 const material=(color,extra={})=>new THREE.MeshStandardMaterial({color,roughness:1,...extra});
@@ -120,6 +121,7 @@ function fields(group,index) {
   batch(group,'Gathered hay rolls',new THREE.CylinderGeometry(1,1,1,12),wood,bales);
 }
 function sideWater(group,index) {
+  if((index+1)*CHUNK_LENGTH<=9150)return;
   const positions=[],indices=[],reeds=[],stones=[],random=rng(index*727+81);
   for(let j=0;j<=32;j++){
     const s=index*CHUNK_LENGTH+j*2,w=extendedWaterAt(s);
@@ -133,13 +135,226 @@ function sideWater(group,index) {
     const s=(index+random())*CHUNK_LENGTH,w=extendedWaterAt(s);if(!w||w.strength<.45)continue;
     const side=i%6===0?1:-1,x=centerAt(s)+w.offset+side*(w.halfWidth+random()*4-1),y=groundAt(x,s);
     if(y<w.level-.1)continue;
-    if(w.kind==='river'&&side<0&&(Math.sin(s*.11)+.35*Math.sin(s*.27)<.4||random()>.42))continue;
-    const h=w.kind==='river'?(side<0?.28+random()*.33:.9+random()*.55):.55+random()*.7;
+    const h=.55+random()*.7;
     reeds.push({...point(x,s,h*.52,h,['#a6b47f','#b8ba87','#879d70'][i%3]),rot:[0,random()*6.28,0]});
     if(i%23===0)stones.push({pos:[x,y-.12,-s],scale:[.7,.45,.55],rot:[0,random()*6,0]});
   }
   plantInstances(group,'Grass_Large_Extruded',reeds);batch(group,'Worn river bank rocks',new THREE.IcosahedronGeometry(1,1),stone,stones);
 }
+function creekBank(group,index){
+  const start=index*CHUNK_LENGTH,end=start+CHUNK_LENGTH;
+  if(extendedWaterAt(start)?.kind!=='river'&&extendedWaterAt(end)?.kind!=='river')return;
+  addCreekWater(group,index);
+  const rocks=[],grasses=[],blooms=[],trees=[],alders=[],random=rng(index*1439+791);
+  const rockColors=['#969582','#b4ac98','#797d6f','#a2987e'];
+  for(let s=Math.ceil((start-6)/15)*15+6;s<end;s+=15){
+    const w=extendedWaterAt(s);
+    if(!w||w.strength<.75)continue;
+    const x=centerAt(s)+w.offset+.40*w.halfWidth*Math.sin(s*.19);
+    const bed=groundAt(x,s),depth=Math.max(0,w.level-bed);
+    rocks.push({pos:[x,bed+depth*.6,-s],scale:[.48+random()*.25,depth*.48+.22,.6+random()*.28],rot:[.12,random()*6,.22],color:rockColors[0]});
+  }
+  for(let i=0;i<255;i++){
+    const s=start+random()*CHUNK_LENGTH,w=extendedWaterAt(s);
+    if(!w||w.strength<.45)continue;
+    const side=i%3===0?1:-1,bank=centerAt(s)+w.offset+side*w.halfWidth;
+    const x=bank+side*(random()*2.4-.62),y=groundAt(x,s);
+    const cover=.58+.38*Math.sin(s*.24+Math.sin(s*.071)*1.7);
+    if(y>w.level+.045&&random()<cover){
+      const h=.17+random()*(side<0?.24:.61);
+      grasses.push({...point(x,s,.44+h*.15,h,side<0?'#b4c793':'#a0b686'),rot:[0,random()*6.28,0]});
+      if(i%7===0&&side<0)blooms.push(point(x,s,.32,.40,'#f3e6bc'));
+    }
+    if(i%4!==0||Math.sin(s*.59+side*2.8)<-.34)continue;
+    const pebbleX=bank-side*(random()*.95+.08),pebbleY=groundAt(pebbleX,s),radius=.09+random()*.23;
+    rocks.push({pos:[pebbleX,pebbleY+.02,-s],scale:[radius,radius*.55,radius*.82],rot:[0,random()*6.28,.18],color:rockColors[i%rockColors.length]});
+  }
+  for(let s=Math.ceil(start/7)*7;s<end;s+=7){
+    const w=extendedWaterAt(s);
+    if(!w||w.strength<.24)continue;
+    const grove=Math.sin(s*.073)+.55*Math.sin(s*.17);
+    const x=centerAt(s)+w.offset+w.halfWidth+1.7+random()*3.1;
+    if(grove>-.25){
+      const h=3.5+random()*2.8;
+      const tree={...point(x,s,h*.87,h,['#829b6a','#a5b582','#8ca97a'][Math.floor(random()*3)]),rot:[0,random()*6.28,0]};
+      (grove>.4?trees:alders).push(tree);
+    }
+    if(grove>.7){
+      const h=3.2+random()*2.3,x=centerAt(s)-5.7-random()*2.2;
+      trees.push({...point(x,s,h*.87,h,'#a6b884'),rot:[0,random()*6.28,0]});
+    }
+  }
+  batch(group,'Creek stones and shallow pebbles',new THREE.IcosahedronGeometry(1,1),stone,rocks);
+  plantInstances(group,'Grass_Large_Extruded',grasses);
+  plantInstances(group,'Flower_2_Clump',blooms);
+  plantInstances(group,'MeadowBroadleaf',trees);
+  plantInstances(group,'BirchTree_3',alders);
+}
+function clearLakeBank(group,index,groundMesh){
+  const start=index*CHUNK_LENGTH,end=start+CHUNK_LENGTH;
+  if(start>=CLEAR_LAKE.end||end<=CLEAR_LAKE.start)return;
+  addClearLakeWater(group,index);
+  const random=rng(index*1789+63),pebbles=[],reeds=[],trees=[];
+  const tints=['#e1d1a8','#a7a78c','#ccbaa0','#9aa89a'];
+  for(let i=0;i<180;i++){
+    const s=start+random()*CHUNK_LENGTH,w=extendedWaterAt(s);
+    if(w?.kind!=='clearLake'||w.strength<.56)continue;
+    const near=centerAt(s)+w.offset-w.halfWidth;
+    const x=near+.6+random()**1.5*7.8,y=groundAt(x,s);
+    const r=.09+random()*.31;
+    pebbles.push({pos:[x,y+.035,-s],scale:[r,r*.54,r*.84],rot:[0,random()*Math.PI,.1],color:tints[i%4]});
+    if(i%6===0&&Math.sin(s*.17)+.42*Math.sin(s*.41)>.3){
+      const edge=near-random()*.65;
+      reeds.push({...point(edge,s,.50,.18+random()*.30,'#96b084'),rot:[0,random()*6.28,0]});
+    }
+  }
+  const groundRay=new THREE.Raycaster(new THREE.Vector3(),new THREE.Vector3(0,-1,0));
+  for(let s=Math.ceil(start/9)*9;s<end;s+=9){
+    const w=extendedWaterAt(s);
+    if(w?.kind!=='clearLake'||w.strength<.35||Math.sin(s*.092)<-.42)continue;
+    const x=centerAt(s)+w.offset+w.halfWidth+5+random()*13;
+    const h=4.8+random()*5;
+    groundRay.ray.origin.set(x,heightAt(s)+70,-s);
+    const hit=groundRay.intersectObject(groundMesh,false)[0];
+    if(!hit)continue;
+    trees.push({pos:[x,hit.point.y-.14,-s],scale:[h*.78,h,h*.78],color:'#91aa8d',rot:[0,random()*6.28,0]});
+  }
+  batch(group,'Pale pebbles in clear shallows',new THREE.IcosahedronGeometry(1,1),stone,pebbles);
+  plantInstances(group,'Grass_Large_Extruded',reeds);
+  plantInstances(group,'MeadowBroadleaf',trees);
+}
+
+const forestWood=material('#a18c6d'),needles=material('#a6b78b',{flatShading:true,vertexColors:true});
+const autumnLeaves=material('#ffffff',{flatShading:true});
+const fernMaterial=material('#8aa760',{side:THREE.DoubleSide});
+
+function pineBoughGeometry(){
+  const positions=[],colors=[],indices=[];
+  const sides=13,rings=[[-.48,.61],[-.32,1],[.03,.72],[.33,.36],[.50,.065]];
+  for(const [ring,[height,radius]] of rings.entries()){
+    for(let i=0;i<sides;i++){
+      const a=i*2*Math.PI/sides+ring*.15;
+      const ragged=.84+.14*Math.sin(i*2.43+ring*.76)+.09*Math.cos(i*4.12);
+      positions.push(Math.cos(a)*radius*ragged,height+Math.sin(i*1.95+ring*.7)*radius*.09,
+        Math.sin(a)*radius*ragged);
+      const shade=.72+.053*ring+.06*Math.sin(i*2.21+ring*.76);
+      colors.push(shade*.96,shade,shade*.94);
+      if(ring<rings.length-1){
+        const lower=ring*sides+i,next=ring*sides+(i+1)%sides;
+        indices.push(lower,lower+sides,next,next,lower+sides,next+sides);
+      }
+    }
+  }
+  for(let i=1;i<sides-1;i++){
+    indices.push(0,i,i+1);
+    const top=(rings.length-1)*sides;
+    indices.push(top,top+i+1,top+i);
+  }
+  const geometry=new THREE.BufferGeometry();
+  geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+  geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function fernGeometry(){
+  const positions=[];
+  for(let frond=0;frond<7;frond++){
+    const angle=frond*2.399,dx=Math.cos(angle),dz=Math.sin(angle);
+    const reach=.55+.32*Math.sin(frond*2.17)**2;
+    let previousRadius=0,previousHeight=0;
+    for(let i=1;i<=8;i++){
+      const t=i/9,r=reach*t,y=.72*Math.sin(t*2.15);
+      const length=reach*(.29*Math.sin(t*Math.PI)+.045);
+      positions.push(dx*previousRadius,previousHeight,dz*previousRadius,
+        dx*r-dz*.014,y,dz*r+dx*.014,dx*r+dz*.014,y,dz*r-dx*.014);
+      for(const side of [-1,1]){
+        positions.push(dx*r,y,dz*r,
+          dx*(r+.075)-side*dz*length,y+.06,dz*(r+.075)+side*dx*length,
+          dx*(r+.082),y+.036,dz*(r+.082));
+      }
+      previousRadius=r;previousHeight=y;
+    }
+  }
+  const geometry=new THREE.BufferGeometry();
+  geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function forestRide(group,index,groundMesh){
+  const start=index*CHUNK_LENGTH,end=start+CHUNK_LENGTH;
+  if(end<=FOREST_RIDE.start||start>=FOREST_RIDE.end)return;
+  const random=rng(index*1927+41),trunks=[],crowns=[],goldCrowns=[],ferns=[],moss=[];
+  const greens=['#557849','#72945d','#526f46','#718553'];
+  const golds=['#a6914d','#c79750','#bc8244','#d4aa62','#9da052'];
+  const woods=['#77614b','#90775d','#695a47'];
+  const groundRay=new THREE.Raycaster(new THREE.Vector3(),new THREE.Vector3(0,-1,0));
+  for(const side of [-1,1])for(const near of [true,false])for(let slot=Math.floor(start/6)-1;slot<Math.ceil(end/6);slot++){
+    // Global slots keep adjacent trunks apart even when two chunks load independently.
+    const treeRandom=rng(slot*1877+(side>0?631:19)+(near?101:1631));
+    const s=slot*6+(near?0:2.8)+treeRandom()*2.75;
+    if(s<start||s>=end)continue;
+    const density=forestRideWeight(s)*(1-.68*forestGladeAt(s));
+    const d=near?5.45+treeRandom()*4.5:12+treeRandom()*27;
+    const x=centerAt(s)+side*d;
+    const water=extendedWaterAt(s);
+    if(treeRandom()>density*(near?.94:.72)||water&&groundAt(x,s)<=water.level+.50)continue;
+    if(water?.kind==='river'&&side>0&&d<water.offset+water.halfWidth+2.2)continue;
+    groundRay.ray.origin.set(x,heightAt(s)+70,-s);
+    const ground=groundRay.intersectObject(groundMesh,false)[0];
+    if(!ground)continue;
+    const y=ground.point.y-.16,h=9.0+treeRandom()*8.8,r=.24+treeRandom()*.29;
+    const rootDepth=.28;
+    const turn=treeRandom()*Math.PI*2,crownWidth=1.7+treeRandom()*1.8;
+    const golden=treeRandom()<forestGoldAt(s)*.92;
+    const trunkHeight=h*(golden?.76:.94);
+    trunks.push({pos:[x,y+(trunkHeight-rootDepth)*.5,-s],scale:[r,trunkHeight+rootDepth,r],rot:[0,turn,0],color:woods[slot%woods.length]});
+    if(golden){
+      for(let lobe=0;lobe<7;lobe++){
+        const angle=turn+lobe*2.399;
+        const reach=lobe===0?0:crownWidth*(.32+treeRandom()*.22);
+        const spread=crownWidth*(.44+treeRandom()*.24);
+        goldCrowns.push({
+          pos:[x+Math.cos(angle)*reach,y+h*(lobe===0?.85:.68+treeRandom()*.14),-s+Math.sin(angle)*reach],
+          scale:[spread,h*(.13+treeRandom()*.075),spread*(.76+treeRandom()*.24)],
+          rot:[.16,angle,.12],color:golds[(slot+lobe)%golds.length],
+        });
+      }
+      continue;
+    }
+    const layers=slot%3===0?3:4;
+    for(let tier=0;tier<layers;tier++){
+      const upper=tier/(layers-1),spread=crownWidth*(1-upper*.54),lean=.20+treeRandom()*.52;
+      crowns.push({pos:[x+Math.cos(turn+tier)*lean,y+h*(.57+upper*.37),-s+Math.sin(turn+tier)*lean],
+        scale:[spread,h*(.29-tier*.018),spread*(.84+treeRandom()*.28)],rot:[0,turn+tier*.72,0],color:greens[(slot+tier)%greens.length]});
+    }
+  }
+  for(let i=0;i<230;i++){
+    const s=start+random()*CHUNK_LENGTH,shade=forestRideWeight(s),side=i%2?-1:1;
+    const d=2.8+random()**1.5*14;
+    if(random()>shade*(.67+.25*Math.sin(s*.35+d*.9)))continue;
+    const x=centerAt(s)+side*d,h=.20+random()*.42;
+    const water=extendedWaterAt(s),y=visibleGroundAt(x,s);
+    if(water&&y<water.level+.24)continue;
+    ferns.push({pos:[x,y-.045,-s],scale:[h*1.4,h,h*1.4],rot:[0,random()*Math.PI*2,0],
+      color:['#6f9a62','#84a16e','#679263','#a3b478'][i%4]});
+    if(i%14===0&&d>4.2){
+      const size=.20+random()*.42;
+      moss.push({pos:[x,y+.04,-s],scale:[size,size*.5,size*.87],rot:[0,random()*Math.PI,0],color:'#a1ab86'});
+    }
+  }
+  const woodMesh=batch(group,'Forest trunks',new THREE.CylinderGeometry(.53,1,1,9),forestWood,trunks);
+  const crownsMesh=batch(group,'Layered pine crowns',pineBoughGeometry(),needles,crowns);
+  const goldMesh=batch(group,'Sunlit golden crowns',new THREE.IcosahedronGeometry(1,1),autumnLeaves,goldCrowns);
+  if(woodMesh)woodMesh.castShadow=true;
+  if(crownsMesh)crownsMesh.castShadow=true;
+  if(goldMesh)goldMesh.castShadow=true;
+  batch(group,'Ferns under the pines',fernGeometry(),fernMaterial,ferns);
+  batch(group,'Moss on forest stones',new THREE.IcosahedronGeometry(1,1),stone,moss);
+}
+
 function groves(group,index) {
   const random=rng(index*1277+67),trees=Array.from({length:5},()=>[]),grass=[[],[]],flowers=[[],[],[]];
   for(let i=0;i<125;i++){
@@ -149,7 +364,7 @@ function groves(group,index) {
     if(random()>density*(.14+scenicProfile(s).trees*.86))continue;
     const side=i%2?1:-1,d=7+random()**.7*70,x=centerAt(s)+side*d,w=extendedWaterAt(s);
     if(w&&groundAt(x,s)<w.level+.25)continue;
-    if(w?.kind==='river'&&side>0&&d<w.offset+w.halfWidth+4)continue;
+    if(w&&w.kind!=='bay'&&side>0&&d<w.offset+w.halfWidth+4)continue;
     const h=e.valley> .5?10+random()*8:3+random()*3.4;
     trees[i%5].push({...point(x,s,h*(e.valley>.5?.67:1.12),h,e.valley>.5?['#84a78f','#73977b','#9bb89b'][i%3]:'#b3c69a'),rot:[0,random()*6.28,0]});
   }
@@ -179,7 +394,7 @@ export function landscapeStones(index){
     if(random()>Math.min(1,e.valley+e.ridge))continue;
     const side=i%2?1:-1,radius=.5+random()*1.8,h=.4+random()*1.3;
     // |centerAt'(s)| <= .183; .20*radius covers longitudinal curvature.
-    const minimum=ROAD_HALF_WIDTH+.8+radius*1.20;
+    const minimum=ROAD_HALF_WIDTH+.8+radius*1.20+forestRideWeight(s)*2.8;
     const d=minimum+random()**1.3*34,x=centerAt(s)+side*d;
     rocks.push({...point(x,s,radius,h),rot:[0,random()*6.28,0]});
   }
@@ -211,7 +426,7 @@ function landmarks(group,index){
   batch(group,'Lakeside rest bench',new THREE.BoxGeometry(1,1,1),wood,props);
   batch(group,'Mountain ridge cairn',new THREE.IcosahedronGeometry(1,1),stone,stones);
 }
-export function addExtendedScenery(group,index){
+export function addExtendedScenery(group,index,groundMesh){
   group.name=`Countryside_${index}`;group.userData.landscape=extendedLandscapeAt(index*CHUNK_LENGTH+32).label;
-  orchard(group,index);orchardWalkway(group,index);fields(group,index);sideWater(group,index);groves(group,index);terraces(group,index);landmarks(group,index);
+  orchard(group,index);orchardWalkway(group,index);fields(group,index);sideWater(group,index);creekBank(group,index);clearLakeBank(group,index,groundMesh);forestRide(group,index,groundMesh);groves(group,index);terraces(group,index);landmarks(group,index);
 }

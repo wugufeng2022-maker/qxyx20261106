@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {ROUTE_LENGTH,EXTENDED_REGIONS,landscapeAt,extendedWaterAt,groundAt,centerAt,heightAt,slopeAt,updateRide,isDryLand} from '../src/route.js';
+import {CLEAR_LAKE,CREEK_REACH,ROUTE_LENGTH,EXTENDED_REGIONS,landscapeAt,extendedWaterAt,groundAt,centerAt,heightAt,slopeAt,updateRide,isDryLand,roadHalfWidthAt} from '../src/route.js';
 
 test('one fixed 10 km itinerary has seven materially different ecological weights',()=>{
   assert.equal(ROUTE_LENGTH,10000);
@@ -26,7 +26,9 @@ test('river and bay water sit inside depressed side basins while the entire road
     for(const lane of [-2.2,0,2.2]){assert.ok(isDryLand(centerAt(s)+lane,s));assert.ok(groundAt(centerAt(s)+lane,s)>w.level+.5);}
   }
   for(let s=3250;s<=10000;s+=5)for(const lane of [-2.2,0,2.2])assert.ok(isDryLand(centerAt(s)+lane,s));
-  assert.equal(extendedWaterAt(6500),null);assert.equal(extendedWaterAt(8650),null);
+  assert.equal(extendedWaterAt(6500).kind,'river');
+  assert.equal(extendedWaterAt(CREEK_REACH.end),null);
+  assert.equal(extendedWaterAt(8650),null);
 });
 test('end approach gently limits speed, stops exactly at 10 km, and cannot replay with held pedals',()=>{
   for(const options of [{},{walking:true,walkRequested:true,walkBlend:1},{auto:false,fastRequested:true}]){
@@ -36,15 +38,55 @@ test('end approach gently limits speed, stops exactly at 10 km, and cannot repla
     assert.equal(updateRide(state,new Set(['w']),1),0);assert.equal(state.distance,10000);
   }
 });
-test('near river bank descends without an occluding berm and leaves clear dry road',()=>{
-  for(let s=5330;s<5980;s+=5){
+test('the meandering creek stays close to the path and exposes a descending bank',()=>{
+  const bankPositions=[];
+  for(let s=5330;s<6375;s+=5){
     const w=extendedWaterAt(s),near=w.offset-w.halfWidth;
-    assert.ok(near>=8&&near<=12);
-    if(w.strength<.99)continue;
+    assert.ok(near>=4.2&&near<=7.7);
+    assert.ok(w.halfWidth>=1.7&&w.halfWidth<=3.6);
+    bankPositions.push(near);
     let previous=groundAt(centerAt(s)+3,s);
-    for(let d=3.1;d<=near+4;d+=.1){const h=groundAt(centerAt(s)+d,s);assert.ok(h<=previous+.0001,`bank at ${s}/${d}`);previous=h;}
-    assert.ok(previous<w.level);
+    for(let d=3.1;d<=near;d+=.1){const h=groundAt(centerAt(s)+d,s);assert.ok(h<=previous+.0001,`bank at ${s}/${d}`);previous=h;}
+    assert.ok(groundAt(centerAt(s)+near,s)>w.level);
+    assert.ok(groundAt(centerAt(s)+near+w.halfWidth*.38,s)<w.level);
+    assert.ok(groundAt(centerAt(s)+w.offset+w.halfWidth+2,s)>w.level);
     assert.equal(groundAt(centerAt(s)+2.2,s),heightAt(s));
+  }
+  assert.ok(Math.max(...bankPositions)-Math.min(...bankPositions)>2.5);
+});
+
+test('the path narrows smoothly, keeps steering inside its edges, and opens again',()=>{
+  assert.equal(roadHalfWidthAt(5250),2.15);
+  assert.equal(roadHalfWidthAt(6500),2.15);
+  assert.ok(roadHalfWidthAt(5600)<1.4);
+  assert.ok(roadHalfWidthAt(6250)<1.4);
+  for(const mode of ['leisure','joyful']){
+    const state={started:true,auto:true,rideMode:mode,distance:5250,speed:5,lane:1.55,turn:0};
+    const keys=new Set(mode==='leisure'?['ArrowRight']:[]);
+    while(state.distance<6500){
+      const before=state.lane;
+      updateRide(state,keys,1/60);
+      assert.ok(Math.abs(state.lane)<roadHalfWidthAt(state.distance)-.56);
+      assert.ok(Math.abs(state.lane-before)<.032);
+    }
+  }
+});
+
+test('clear lake opens after the woods with a level surface, shallows, and a dry rideable shore',()=>{
+  assert.equal(extendedWaterAt(CLEAR_LAKE.start),null);
+  assert.equal(extendedWaterAt(CLEAR_LAKE.end),null);
+  const level=extendedWaterAt(6960).level;
+  for(let s=6840;s<=7130;s+=2){
+    const lake=extendedWaterAt(s),near=lake.offset-lake.halfWidth;
+    const bed=d=>groundAt(centerAt(s)+d,s);
+    assert.equal(lake.kind,'clearLake');
+    assert.equal(lake.level,level);
+    assert.ok(lake.halfWidth>34);
+    assert.ok(bed(2.15)>level+.7);
+    assert.ok(bed(near)>level);
+    assert.ok(bed(near+4)<level&&bed(near+4)>level-.6);
+    assert.ok(bed(lake.offset)<level-3);
+    assert.ok(bed(lake.offset+lake.halfWidth+2)>level);
   }
 });
 

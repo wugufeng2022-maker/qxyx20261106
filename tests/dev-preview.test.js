@@ -6,7 +6,7 @@ import {PREVIEW_DESTINATIONS,readPreview,previewURL} from '../src/dev-preview.js
 import {createDuckEvent,updateDuckEvent} from '../src/duck-event.js';
 import {createArtistEvent,updateArtist} from '../src/artist.js';
 test('preview route uses metres in URLs and bounds kilometre input destinations',()=>{
- assert.deepEqual(PREVIEW_DESTINATIONS.map(d=>d.at),[0,RABBIT_HOME-45,RABBIT_HOME-6,76,170,374,480,548,753,780,917,1123,1209,1274,1362,CAT_HOME-68,CAT_HOME-18,1754,2160,2550,2820,2890,3100,3220,3516,3630,3650,4650,5650,6650,7650,8650,9650]);
+ assert.deepEqual(PREVIEW_DESTINATIONS.map(d=>d.at),[0,RABBIT_HOME-45,RABBIT_HOME-6,76,170,374,480,548,753,780,917,1123,1209,1274,1362,CAT_HOME-68,CAT_HOME-18,1754,2160,2550,2820,2890,3100,3220,3516,3630,3650,4650,5650,5980,6650,6730,7650,8650,9650]);
  for(const [value,expected] of [['-3',0],['99999',10000],['NaN',0],['',0],['170',170]])assert.equal(readPreview('?previewAt='+value).at,expected);
  const url=new URL(previewURL('http://localhost/?keep=yes&previewMemories=1&previewArtistEnd=1&previewPainting=1',{at:960}));
  assert.equal(url.searchParams.get('previewAt'),'960');assert.equal(url.searchParams.has('previewNatural'),true);

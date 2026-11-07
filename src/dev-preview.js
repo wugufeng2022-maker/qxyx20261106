@@ -1,6 +1,7 @@
 import {RABBIT_HOME} from './start-courtyard.js';
 import {CAT_HOME} from './village-cat-site.js';
 import {WALKER} from './orchard-walk.js';
+import {CLEAR_LAKE,FOREST_RIDE} from './route.js';
 // Imported only by the development entry branch; no storage or encounter mutations.
 export const PREVIEW_DESTINATIONS = [
   {label:'起点小院',at:0}, {label:'小院小兔 · 招呼',at:RABBIT_HOME-45}, {label:'小院小兔 · 照料点',at:RABBIT_HOME-6}, {label:'出村花路',at:76}, {label:'林荫 · 桦树大道',at:170},
@@ -8,8 +9,8 @@ export const PREVIEW_DESTINATIONS = [
   {label:'绘画湖畔 · 预览',at:1123,painting:true}, {label:'湖岸往村口',at:1209}, {label:'绿藤廊 · 入口',at:1274}, {label:'绿藤廊 · 树荫',at:1362},
   {label:'村口小猫 · 跑来招呼',at:CAT_HOME-68}, {label:'村口小猫 · 院门',at:CAT_HOME-18}, {label:'绿藤廊 · 出口',at:1754},
   {label:'葱茏长上坡',at:2160}, {label:'山顶 · 下坡起点',at:2550}, {label:'向阳长下坡',at:2820}, {label:'下坡池塘 · 从路上望见',at:2890}, {label:'坡脚远望',at:3100},
-  {label:'坡脚进果园',at:3220}, {label:'果园 · 邻居前',at:WALKER.start-34}, {label:'果园 · 长椅',at:WALKER.end}, {label:'风过果园',at:3650}, {label:'金色麦野',at:4650}, {label:'河岸芦苇',at:5650},
-  {label:'幽绿林谷',at:6650}, {label:'层叠草坡',at:7650}, {label:'开阔山脊',at:8650}, {label:'晚霞湖湾',at:9650},
+  {label:'坡脚进果园',at:3220}, {label:'果园 · 邻居前',at:WALKER.start-34}, {label:'果园 · 长椅',at:WALKER.end}, {label:'风过果园',at:3650}, {label:'金色麦野',at:4650}, {label:'溪边窄路',at:5650},
+  {label:'森林入口',at:FOREST_RIDE.rideStart}, {label:'森林深处',at:6650}, {label:'清湖前的林路',at:CLEAR_LAKE.rideStart}, {label:'层叠草坡',at:7650}, {label:'开阔山脊',at:8650}, {label:'晚霞湖湾',at:9650},
 ];
 export function readPreview(search) {
   const params=new URLSearchParams(search),raw=params.get('previewAt');

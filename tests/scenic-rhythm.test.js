@@ -42,7 +42,8 @@ test('all new near/mid-distance vegetation is deterministic, grounded, bounded a
    }
   }
  }
- assert.ok(count>4900);
+ // The lake reserves a broad vegetation-free sightline on one side of the road.
+ assert.ok(count>4700);
  for(const s of [3554,RABBIT_HOME,1520,1100])assert.equal(scenicClear(centerAt(s)+(s===1100?4:-4),s,1),false);
  assert.equal(scenicClear(centerAt(2920)+12,2920,1),false);
 });

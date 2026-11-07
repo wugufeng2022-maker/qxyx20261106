@@ -15,6 +15,21 @@ export const ROUTE_LENGTH = 10000;
 export const ROAD_HALF_WIDTH = 2.15;
 export const CHUNK_LENGTH = 64;
 const smooth = (a,b,x) => {const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
+export const CREEK_REACH = Object.freeze({start:5150,end:6550});
+export const CLEAR_LAKE = Object.freeze({start:6740,end:7230,rideStart:6730});
+export const FOREST_RIDE = Object.freeze({start:6000,end:6790,rideStart:5980});
+export const forestRideWeight = s => smooth(FOREST_RIDE.start,6070,s)*(1-smooth(6710,FOREST_RIDE.end,s));
+export const forestGladeAt = s => Math.max(
+  smooth(6135,6165,s)*(1-smooth(6190,6235,s))*.72,
+  smooth(6370,6410,s)*(1-smooth(6440,6500,s)),
+);
+export const forestGoldAt = s => Math.max(
+  smooth(6200,6265,s)*(1-smooth(6320,6390,s))*.85,
+  smooth(6520,6575,s)*(1-smooth(6690,6750,s)),
+);
+export const creeksideWeight = s => smooth(5270,5390,s)*(1-smooth(6300,6450,s));
+export const clearLakeViewWeight = s => smooth(6750,6830,s)*(1-smooth(7100,7210,s));
+export const roadHalfWidthAt = s => ROAD_HALF_WIDTH-.78*creeksideWeight(s);
 export const openingVista = s => smooth(446,520,s)*(1-smooth(676,718,s));
 export function openingSideView(s, offset) {
   for (const {start,end} of OPENING_AVENUES) {
@@ -46,8 +61,8 @@ export function landscapeAt(s) {
 export const EXTENDED_REGIONS=Object.freeze([
   {key:'orchard',start:3250,end:4200,label:'风过果园'},
   {key:'wheat',start:4200,end:5150,label:'金色麦野'},
-  {key:'river',start:5150,end:6150,label:'河岸芦苇'},
-  {key:'valley',start:6150,end:7150,label:'幽绿林谷'},
+  {key:'river',start:5150,end:CREEK_REACH.end,label:'溪边窄路'},
+  {key:'valley',start:CREEK_REACH.end,end:7150,label:'幽绿林谷'},
   {key:'terraces',start:7150,end:8150,label:'层叠草坡'},
   {key:'ridge',start:8150,end:9150,label:'开阔山脊'},
   {key:'bay',start:9150,end:10000,label:'晚霞湖湾'},
@@ -69,11 +84,21 @@ function extendedHeight(s) {
   }
   return {height:datum+3,slope:0};
 }
-// Horizontal side water, bounded to finite route reaches; the near bank is >=9 m off-road.
+// A meandering creek replaces the broad river strip, with a dry shelf beside the road.
 export function extendedWaterAt(s) {
-  const river=smooth(5150,5320,s)*(1-smooth(5980,6150,s));
+  const river=smooth(CREEK_REACH.start,5320,s)*(1-smooth(6380,CREEK_REACH.end,s));
+  const lake=smooth(CLEAR_LAKE.start,6840,s)*(1-smooth(7130,CLEAR_LAKE.end,s));
   const bay=smooth(9150,9350,s);
-  if(river>0)return {kind:'river',level:-1.8,offset:28+2*Math.sin(s*.007),halfWidth:18,strength:river};
+  if(river>0){
+    const near=5.95+1.10*Math.sin(s*.027)+.62*Math.sin(s*.061)+15*smooth(6375,6520,s);
+    const halfWidth=2.65+.66*Math.sin(s*.042)+.28*Math.sin(s*.083);
+    return {kind:'river',level:heightAt(5650)-1.22,offset:near+halfWidth,halfWidth,strength:river};
+  }
+  if(lake>0){
+    const near=6.4+1.35*Math.sin(s*.026)+.55*Math.sin(s*.063);
+    const halfWidth=5+34*lake+3*lake*Math.sin(s*.032);
+    return {kind:'clearLake',level:heightAt(6960)-1.62,offset:near+halfWidth,halfWidth,strength:lake};
+  }
   if(bay>0)return {kind:'bay',level:-1.5,offset:78,halfWidth:65,strength:bay};
   return null;
 }
@@ -155,15 +180,17 @@ export function groundAt(x, s) {
     const specialized=heightAt(s)+rolling*(1-e.valley*.7-e.ridge*.7)+extra;
     base=base*(1-blend)+specialized*blend;
     const water=extendedWaterAt(s);
-    if(water) {
-      if(water.kind==='river'&&d>3) {
-        // A low, continuously descending viewing bank; no berm may hide the river.
-        const near=water.offset-water.halfWidth;
-        const descent=smooth(3,near+4,d);
-        const bank=heightAt(s)*(1-descent)+(water.level-1.6)*descent;
-        const influence=(1-smooth(water.offset,water.offset+4,d))*water.strength;
-        base=base*(1-influence)+bank*influence;
-      }
+    if(water&&(water.kind==='river'||water.kind==='clearLake')&&d>3) {
+      const near=water.offset-water.halfWidth,far=water.offset+water.halfWidth;
+      const shore=water.level+.13;
+      const bank=heightAt(s)+(shore-heightAt(s))*smooth(3,near,d);
+      const bed=water.kind==='river'
+        ? shore-1.29*Math.sin(Math.PI*smooth(near,far,d))
+        : shore-3.8*smooth(0,19,Math.min(d-near,far-d));
+      const channel=d<near?bank:bed;
+      const influence=(1-smooth(far,far+(water.kind==='river'?3.2:10),d))*water.strength;
+      base+=(channel-base)*influence;
+    } else if(water?.kind==='bay') {
       const cross=(1-smooth(water.halfWidth-2.5,water.halfWidth+3.5,Math.abs(d-water.offset)))*water.strength;
       base=base*(1-cross)+(water.level-1.6)*cross;
     }
@@ -189,7 +216,8 @@ function roadTransition(s) {
 export function roadSurface(s, lane) {
   const transition=roadTransition(s);
   // Keep a broad, comfortable central line. Rough shoulders begin near the trees.
-  const edge=Math.max(0,Math.min(1,(Math.abs(lane)-.5)/1.05));
+  const normalLane=Math.abs(lane)*ROAD_HALF_WIDTH/roadHalfWidthAt(s);
+  const edge=Math.max(0,Math.min(1,(normalLane-.5)/1.05));
   const shoulder=edge*edge*(3-2*edge);
   const patch=.65+.35*Math.sin(s*.085+.7)**2;
   const roughness=.045+transition*(.015+shoulder*patch*.70);
@@ -229,13 +257,14 @@ export function updateRide(state, input, dt) {
   const joyful=state.rideMode==='joyful'&&!walking&&!mounting&&!posing;
   // A relaxed figure-eight rhythm: broader arcs and a visible change of lean
   // every half cycle, with clearance inside the normal road steering bounds.
-  const weaveTarget=state.weaveSafe===false?0:1.42*Math.sin(state.distance*Math.PI/26);
+  const roadLimit=1.55-.78*creeksideWeight(state.distance);
+  const weaveTarget=state.weaveSafe===false?0:(roadLimit-.13)*Math.sin(state.distance*Math.PI/26);
   const weaveLimit=state.weaveSafe===false?.35:.70;
   const weave=joyful?Math.max(-weaveLimit,Math.min(weaveLimit,(weaveTarget-state.lane)*1.4)):0;
   const manualSteer=input.has('ArrowRight')||input.has('d')||input.has('ArrowLeft')||input.has('a');
   const steer = manualSteer ? keySteer : state.tiltEnabled ? (state.tiltSteer||0) : mouseSteer || weave;
   const oldLane = state.lane;
-  const limit=state.shoulderAllowed?3.1:1.55;
+  const limit=state.shoulderAllowed?3.1:roadLimit;
   const nextLane=state.lane + steer * Math.min(state.speed * .33, 1.8) * dt;
   // Return gently when leaving a safe reach; never snap a shoulder rider inward.
   state.lane = Math.abs(state.lane)>limit ? state.lane-Math.sign(state.lane)*Math.min(Math.abs(state.lane)-limit,dt*1.6) : Math.max(-limit,Math.min(limit,nextLane));
