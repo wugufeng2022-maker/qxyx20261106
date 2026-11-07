@@ -264,10 +264,16 @@ export function updateRide(state, input, dt) {
   const manualSteer=input.has('ArrowRight')||input.has('d')||input.has('ArrowLeft')||input.has('a');
   const steer = manualSteer ? keySteer : state.tiltEnabled ? (state.tiltSteer||0) : mouseSteer || weave;
   const oldLane = state.lane;
-  const limit=state.shoulderAllowed?3.1:roadLimit;
   const nextLane=state.lane + steer * Math.min(state.speed * .33, 1.8) * dt;
-  // Return gently when leaving a safe reach; never snap a shoulder rider inward.
-  state.lane = Math.abs(state.lane)>limit ? state.lane-Math.sign(state.lane)*Math.min(Math.abs(state.lane)-limit,dt*1.6) : Math.max(-limit,Math.min(limit,nextLane));
+  const guide=state.laneGuide;
+  if(guide){
+    const lo=guide.min,hi=guide.max;
+    state.lane=state.lane<lo?state.lane+Math.min(lo-state.lane,dt*1.6):state.lane>hi?state.lane-Math.min(state.lane-hi,dt*1.6):Math.max(lo,Math.min(hi,nextLane));
+  }else{
+    const limit=state.shoulderAllowed?3.1:roadLimit;
+    // Return gently when leaving a safe reach; never snap a shoulder rider inward.
+    state.lane = Math.abs(state.lane)>limit ? state.lane-Math.sign(state.lane)*Math.min(Math.abs(state.lane)-limit,dt*1.6) : Math.max(-limit,Math.min(limit,nextLane));
+  }
   state.turn += ((state.lane - oldLane) / Math.max(dt, .001) - state.turn) * (1 - Math.exp(-6 * dt));
   const distance = Math.min(remaining,state.speed * dt);
   state.distance = Math.min(ROUTE_LENGTH,state.distance+distance);

@@ -2,27 +2,28 @@ import * as THREE from 'three';
 import {centerAt,gradeSpeed,groundAt,heightAt,roadSurface,rng,tangentAt} from './route.js';
 import {createRider} from './rider.js';
 
-// Another painting theme beside the lakeside impressionist study.
-// The ride stays on the real wheat-field centerline: the milky road is a
-// resurfacing of the path under the wheels, not a second level or a teleport.
-// Geometry, stars and the easel study are original procedural drawings.
+// A side path beside the wheat road, not a popup and not a teleport.
+// The main road stays where it is. This branch leaves it, winds, and joins it again.
+// Geometry, plants and the wooden sign are original procedural drawings.
 // No external image is sampled. Reference authorship and licence are unknown.
 export const STARRY=Object.freeze({
-  sight:4314,
-  promptStart:4314,
-  promptEnd:4388,
-  easel:4336,
-  revealStart:4420,
-  revealEnd:4490,
-  releaseStart:4810,
-  releaseEnd:4885,
-  farewell:4848,
-  end:4892,
-  bikeLane:4.55,
-  easelLane:3.28,
-  roadHalf:2.15,
-  bend:7.6,
+  sight:4318,
+  promptStart:4318,
+  promptEnd:4396,
+  easel:4338,
+  split:4356,
+  revealStart:4410,
+  revealEnd:4460,
+  releaseStart:4628,
+  releaseEnd:4676,
+  farewell:4660,
+  end:4704,
+  bikeLane:-3.15,
+  easelLane:-2.55,
+  roadHalf:1.72,
+  bend:7.2,
 });
+export const STARRY_SIGN=Object.freeze({title:'画家村',subtitle:'写生小径',note:'前方汇回主路'});
 export const STARRY_LIGHT=Object.freeze({
   background:'#a394b4',
   horizon:'#f3d0b8',
@@ -46,34 +47,29 @@ const DUSK_RIDGES={
 };
 
 export function createStarryEvent(){return {status:'unseen',entryAt:0,leaveAt:0,time:0,fade:0,attention:false,entered:false,leftEarly:false,journal:false};}
-export function canEnterStarry(e,distance){return !!e&&e.status==='available'&&distance>=STARRY.promptStart&&distance<=STARRY.promptEnd;}
-export function enterStarry(e,distance){if(!canEnterStarry(e,distance))return false;e.status='active';e.entered=true;e.entryAt=distance;e.time=0;e.fade=0;e.leftEarly=false;e.journal=false;return true;}
-export function skipStarry(e){if(!e||e.status!=='available')return false;e.status='skipped';e.attention=false;return true;}
-export function leaveStarry(e,distance){if(!e||!['active','farewell'].includes(e.status))return false;e.status='departing';e.leftEarly=true;e.leaveAt=distance;e.time=0;e.fade=0;return true;}
-function syncAttention(e,distance){
-  e.attention=(e.status==='available'&&distance>=STARRY.promptStart&&distance<=STARRY.promptEnd)
-    ||e.status==='active'||e.status==='departing'||(e.status==='farewell'&&e.time<4.5);
-}
-export function updateStarry(e,{started,paused,distance,dt}){
+export function canEnterStarry(){return false;}
+export function enterStarry(){return false;}
+export function skipStarry(){return false;}
+export function leaveStarry(){return false;}
+export function updateStarry(e,{started,paused,distance,lane=0}){
   if(!e||!started||paused)return;
-  if(e.status==='unseen')e.status=distance>STARRY.promptEnd?'skipped':distance>=STARRY.sight?'available':'unseen';
-  else if(e.status==='available'&&distance>STARRY.promptEnd)e.status='skipped';
-  else if(e.status==='active'&&distance>=STARRY.farewell){e.status='farewell';e.time=0;}
-  else if(e.status==='farewell'){e.time+=dt;if(e.time>=4.5||distance>STARRY.end+12){e.status='done';e.journal=!!e.entered;}}
-  else if(e.status==='departing'){e.time+=dt;e.fade=Math.min(1,Math.max(e.time/2.4,(distance-(e.leaveAt??distance))/36));if(e.fade>=1)e.status='done';}
-  syncAttention(e,distance);
+  const on=starryLaneGuide(distance,lane).onBranch;
+  e.attention=false;
+  if(on&&distance>STARRY.split+24&&distance<STARRY.releaseEnd-8){e.status='riding';e.entered=true;e.entryAt=e.entryAt||distance;}
+  else if(e.entered&&distance>=STARRY.releaseEnd-4){e.status='done';e.journal=true;}
+  else if(!e.entered&&distance>STARRY.releaseEnd)e.status='passed';
+  else if(distance>=STARRY.sight)e.status=e.entered?'riding':'fork';
 }
-export function starryView(e,distance){
+export function starryView(e,distance,lane=0){
   const zero={connect:0,distant:0,village:0};
-  if(!e||!['active','farewell','departing'].includes(e.status))return zero;
-  if(!(e.entryAt>=STARRY.sight-80))return zero;
-  const fade=e.status==='departing'?1-(e.fade||0):1;
-  const entry=e.entryAt,release=1-smooth(STARRY.releaseStart,STARRY.releaseEnd,distance);
-  const connect=smooth(entry,entry+22,distance)*release*fade;
-  const distant=smooth(entry+16,entry+64,distance)*release*fade;
-  const villageStart=Math.max(STARRY.revealStart,entry+38);
-  const village=smooth(villageStart,Math.max(STARRY.revealEnd,villageStart+70),distance)*release*fade;
-  return {connect,distant,village};
+  const on=starryLaneGuide(distance,lane).onBranch||(!!e?.entered&&Math.abs((lane||0)-starryBranchCenter(distance))<2.2);
+  if(!on)return zero;
+  const release=1-smooth(STARRY.releaseStart,STARRY.releaseEnd,distance);
+  return {
+    connect:smooth(STARRY.split,STARRY.split+16,distance)*release,
+    distant:smooth(STARRY.split+8,STARRY.split+48,distance)*release,
+    village:smooth(STARRY.split+28,STARRY.revealEnd,distance)*release,
+  };
 }
 export function starryRoadFrame(s,lane){
   const tangent=tangentAt(s),h=Math.hypot(tangent,1),fx=tangent/h,fz=-1/h,rx=-fz,rz=fx;
@@ -85,15 +81,12 @@ export function starryFigurePose(e,distance){
   const s=exit?STARRY.farewell:STARRY.easel;
   return {exit,bike:starryRoadFrame(s-.35,STARRY.bikeLane),easel:starryRoadFrame(s+.2,STARRY.easelLane)};
 }
-export function starryFigureOpacity(e,distance,view){
-  if(starryFigurePose(e,distance).exit)return smooth(STARRY.releaseStart,STARRY.releaseStart+36,distance);
-  if(['unseen','available','skipped'].includes(e?.status))return 1;
-  if(e?.status==='active')return 1-Math.min(1,view?.village||0);
-  return 0;
+export function starryFigureOpacity(e,distance){
+  return smooth(STARRY.sight-36,STARRY.sight,distance)*(1-smooth(STARRY.split+18,STARRY.split+64,distance));
 }
 export function starryVillageSeconds(step=2){
   let time=0;
-  for(let s=STARRY.revealEnd;s<STARRY.releaseStart;s+=step)time+=step/Math.max(.2,gradeSpeed(5,s)*roadSurface(s,0).speedFactor);
+  for(let s=STARRY.split;s<STARRY.releaseEnd;s+=step)time+=step/Math.max(.2,gradeSpeed(5,s)*roadSurface(s,0).speedFactor);
   return time;
 }
 export function starryRoadSpan(){
@@ -101,19 +94,28 @@ export function starryRoadSpan(){
   for(let s=STARRY.revealEnd;s<=STARRY.releaseStart;s+=5){const x=centerAt(s);min=Math.min(min,x);max=Math.max(max,x);}
   return max-min;
 }
-// A rideable S added to the real lane. Zero value and slope at both ends,
-// so the painted road joins the wheat road and leaves it again.
-export function starryBend(s){
-  const a=STARRY.revealEnd,b=STARRY.releaseStart;
+// Lateral center of the branch. Zero at both ends, so it leaves the main road and returns.
+export function starryBranchCenter(s){
+  const a=STARRY.split,b=STARRY.releaseEnd;
   if(s<=a||s>=b)return 0;
-  const u=(s-a)/(b-a),env=smooth(0,.12,u)*(1-smooth(.88,1,u));
-  return STARRY.bend*env*Math.sin(u*Math.PI*3);
+  const u=(s-a)/(b-a),env=smooth(0,.32,u)*(1-smooth(.72,1,u));
+  const wave=(Math.sin(u*Math.PI*2)*1.7+Math.sin(u*Math.PI*4)*.4)*smooth(.18,.42,u);
+  return -(STARRY.bend*env+wave);
 }
-export function starryPaintedFrame(s,lane=0){return starryRoadFrame(s,lane+starryBend(s));}
+export function starryBend(s){return starryBranchCenter(s);}
+export function starryLaneGuide(s,lane=0){
+  const branch=starryBranchCenter(s),half=1.42,main=1.55,gap=Math.abs(branch);
+  const committed=Math.abs(lane-branch)+.4<Math.abs(lane);
+  if(gap<.15)return {min:-main,max:main,onBranch:false,branch,center:0};
+  if(gap<3.2)return {min:Math.min(-main,branch-half),max:main,onBranch:committed,branch,center:committed?branch:0};
+  const onBranch=committed,center=onBranch?branch:0,limit=onBranch?half:main;
+  return {min:center-limit,max:center+limit,onBranch,branch,center};
+}
+export function starryPaintedFrame(s,lane=0){return starryRoadFrame(s,lane+starryBranchCenter(s));}
 export function starrySurfaceY(x,s){return Math.max(heightAt(s),groundAt(x,s));}
 export function starryBendCount(){
   let prev=0,count=0;
-  for(let s=STARRY.revealEnd;s<=STARRY.releaseStart;s+=1){
+  for(let s=STARRY.split;s<=STARRY.releaseEnd;s+=1){
     const turn=starryBend(s+1)-starryBend(s-1),sign=Math.sign(turn);
     if(prev&&sign&&sign!==prev)count++;
     if(sign)prev=sign;
@@ -196,13 +198,20 @@ function paintWash(g,w,h,base,washes){
   g.globalAlpha=1;
 }
 function paintRoad(g,w,h){
-  paintWash(g,w,h,'#f3eee4',[['#efe2d0',.3,.35,.46,.4],['#f8f4ec',.72,.62,.4,.34],['#e6d5c6',.5,.2,.28,.22]]);
-  g.globalAlpha=.55;g.fillStyle='#e4b5a6';
-  g.fillRect(w*.47,h*.22,w*.06,h*.05);g.fillRect(w*.47,h*.68,w*.06,h*.045);
+  paintWash(g,w,h,'#b4b0a8',[['#a8a49d',.28,.4,.42,.32],['#c2beb6',.72,.62,.36,.26],['#9c9892',.5,.18,.22,.16]]);
+  g.globalAlpha=.22;g.fillStyle='#8f8b85';
+  for(let i=0;i<14;i++)g.fillRect((i*37)%w,(i*19)%h,5,2);
   g.globalAlpha=1;
 }
 function paintMeadow(g,w,h){
-  paintWash(g,w,h,'#e6d7bf',[['#f3eadc',.25,.4,.4,.3],['#d7c6a4',.7,.55,.42,.32],['#cbb89a',.48,.78,.3,.24]]);
+  paintWash(g,w,h,'#c9d0b4',[['#d9d4c4',.25,.4,.4,.3],['#b7c49a',.7,.55,.42,.32],['#a8b48c',.48,.78,.3,.24]]);
+}
+function paintSign(g,w,h){
+  g.fillStyle='#b08960';g.fillRect(0,0,w,h);
+  g.fillStyle='#f3ead8';g.fillRect(10,10,w-20,h-20);
+  g.fillStyle='#5c4636';g.font='700 72px sans-serif';g.fillText(STARRY_SIGN.title,48,118);
+  g.fillStyle='#6d5844';g.font='500 46px sans-serif';g.fillText(STARRY_SIGN.subtitle,48,186);
+  g.fillStyle='#7d6a56';g.font='400 30px sans-serif';g.fillText(STARRY_SIGN.note,48,246);
 }
 function duskDome(radius){
   const geo=new THREE.SphereGeometry(radius,28,18),pos=geo.attributes.position,colors=new Float32Array(pos.count*3);
@@ -227,15 +236,15 @@ export function createStarryWorld(scene){
   const group=new THREE.Group();group.name='Starry stone village';group.userData.source='original-procedural';scene.add(group);
   const geometries=[],materials=[];
   const keep=g=>{geometries.push(g);return g;},track=m=>{materials.push(m);return m;};
-  const rand=rng(77),half=STARRY.roadHalf,dummy=new THREE.Object3D(),tint=new THREE.Color(),up=new THREE.Vector3(0,1,0);
+  const rand=rng(77),half=STARRY.roadHalf,dummy=new THREE.Object3D(),up=new THREE.Vector3(0,1,0);
   const roadMap=canvasTexture(paintRoad,128,128);
   if(roadMap){roadMap.wrapS=roadMap.wrapT=THREE.RepeatWrapping;}
   const meadowMap=canvasTexture(paintMeadow,128,128);
   if(meadowMap){meadowMap.wrapS=meadowMap.wrapT=THREE.RepeatWrapping;}
-  const roadMat=track(new THREE.MeshStandardMaterial({color:'#f4efe4',map:roadMap,vertexColors:true,roughness:1,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2}));
-  const vergeMat=track(new THREE.MeshStandardMaterial({color:'#f0e6d4',map:meadowMap,vertexColors:true,roughness:1,side:THREE.DoubleSide}));
+  const roadMat=track(new THREE.MeshStandardMaterial({color:'#b7b3ab',map:roadMap,vertexColors:true,roughness:.96,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2}));
+  const vergeMat=track(new THREE.MeshStandardMaterial({color:'#c5d0b2',map:meadowMap,vertexColors:true,roughness:1,side:THREE.DoubleSide}));
   const tuftMat=track(new THREE.MeshStandardMaterial({color:'#ffffff',roughness:1}));
-  const stoneMat=track(new THREE.MeshStandardMaterial({color:'#ffffff',roughness:1}));
+  const bloomMat=track(new THREE.MeshStandardMaterial({color:'#ffffff',roughness:1}));
   const wallMat=track(new THREE.MeshStandardMaterial({color:'#ffffff',roughness:1}));
   const roofMat=track(new THREE.MeshStandardMaterial({color:'#f7f3ea',roughness:1}));
   const trimMat=track(new THREE.MeshStandardMaterial({color:'#6d5648',roughness:1}));
@@ -244,17 +253,15 @@ export function createStarryWorld(scene){
   const trunkMat=track(new THREE.MeshStandardMaterial({color:'#4a4038',roughness:1}));
   const twigMat=track(new THREE.MeshStandardMaterial({color:'#f6f1e6',roughness:1}));
   const positions=[],indices=[],colors=[],uvs=[];
-  const roadFrom=STARRY.promptStart-8,roadTo=STARRY.end+6,step=2,across=6;
-  const brickAt=s=>Math.abs((s%16)-8)<1.2;
+  const roadFrom=STARRY.split-6,roadTo=STARRY.releaseEnd+6,step=2,across=6;
   for(let s=roadFrom,row=0;s<=roadTo;s+=step,row++){
+    const branch=starryBranchCenter(s);
     for(let i=0;i<=across;i++){
-      const lane=THREE.MathUtils.lerp(-half,half,i/across),frame=starryPaintedFrame(s,lane);
-      const edge=Math.abs(i/across-.5)*2,shade=.98-.04*edge+.02*Math.sin(s*.05+i*.4);
-      const brick=brickAt(s)&&Math.abs(i-across/2)<=1;
-      if(brick)colors.push(.90,.72,.66);
-      else colors.push(shade,shade*.985,shade*.94);
-      positions.push(frame.x,starrySurfaceY(frame.x,s)+.02,frame.z);
-      uvs.push(i/across,(s-roadFrom)/16);
+      const lane=branch+THREE.MathUtils.lerp(-half,half,i/across),frame=starryRoadFrame(s,lane);
+      const edge=Math.abs(i/across-.5)*2,shade=.97+.03*Math.sin(s*.07+i);
+      colors.push(shade*(.72+.04*edge),shade*(.70+.03*edge),shade*(.66+.02*edge));
+      positions.push(frame.x,starrySurfaceY(frame.x,s)+.025,frame.z);
+      uvs.push(i/across,(s-roadFrom)/10);
       if(i<across&&s+step<=roadTo){const a=row*(across+1)+i,b=a+across+1;indices.push(a,a+1,b,a+1,b+1,b);}
     }
   }
@@ -263,19 +270,22 @@ export function createStarryWorld(scene){
   roadGeo.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
   roadGeo.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));
   roadGeo.setIndex(indices);roadGeo.computeVertexNormals();
-  const road=new THREE.Mesh(roadGeo,roadMat);road.name='Milky painted road';road.receiveShadow=true;group.add(road);
+  const road=new THREE.Mesh(roadGeo,roadMat);road.name='Painter village asphalt';road.receiveShadow=true;group.add(road);
   const vergePos=[],vergeIndex=[],vergeColor=[],vergeUv=[];
-  const vergeFrom=STARRY.revealEnd-8,vergeTo=STARRY.releaseStart+8,bands=6,outer=22;
-  const cream=new THREE.Color('#f4eee4'),grass=new THREE.Color('#cfc09a'),meadow=new THREE.Color('#b7a57c');
+  const vergeFrom=STARRY.split-4,vergeTo=STARRY.releaseEnd+4,bands=4;
+  const dust=new THREE.Color('#d2d0c4'),grass=new THREE.Color('#b7c49a'),meadow=new THREE.Color('#8fa57a');
   for(let s=vergeFrom,row=0;s<=vergeTo;s+=step,row++){
+    const branch=starryBranchCenter(s),reach=Math.abs(branch)<2.6?1.1:5.4;
     for(const side of [-1,1])for(let b=0;b<=bands;b++){
-      const t=b/bands,lane=side*(half-.06+t*outer),frame=starryPaintedFrame(s,lane);
-      const swell=t*t*(.1+.16*Math.sin(s*.032+side*1.4)+.04*Math.sin(s*.07+b));
-      vergePos.push(frame.x,starrySurfaceY(frame.x,s)+.006+Math.max(0,swell),frame.z);
-      const col=t<.4?cream.clone().lerp(grass,t/.4):grass.clone().lerp(meadow,(t-.4)/.6);
-      const shade=.97+.03*Math.sin(s*.06+b);
+      const t=b/bands;
+      const lane=branch+side*(half-.02+t*reach);
+      const frame=starryRoadFrame(s,lane);
+      const swell=t*t*(.06+.1*Math.sin(s*.05+side));
+      vergePos.push(frame.x,starrySurfaceY(frame.x,s)+.008+Math.max(0,swell),frame.z);
+      const col=t<.45?dust.clone().lerp(grass,t/.45):grass.clone().lerp(meadow,(t-.45)/.55);
+      const shade=.96+.04*Math.sin(s*.05+b);
       vergeColor.push(col.r*shade,col.g*shade,col.b*shade);
-      vergeUv.push(b*.35,(s-vergeFrom)/18);
+      vergeUv.push((side<0?0:1)+b*.2,(s-vergeFrom)/14);
     }
     if(s+step<=vergeTo){
       const stride=(bands+1)*2,a=row*stride;
@@ -293,41 +303,33 @@ export function createStarryWorld(scene){
   const verge=new THREE.Mesh(vergeGeo,vergeMat);verge.name='Village floor';verge.receiveShadow=true;group.add(verge);
   const box=keep(new THREE.BoxGeometry(1,1,1));
   const tuftGeo=keep(new THREE.ConeGeometry(.45,1,5));
-  const tuftColors=['#c6b48a','#b5a06e','#d8c7a4'].map(c=>new THREE.Color(c));
-  const tuftSpots=[];
-  for(let i=0;i<56;i++){
-    const s=STARRY.revealEnd+6+i*5.4,side=i%2?-1:1;
-    const lane=side*(half+1.35+(i%3)*1.2),h=.34+.22*((i*3)%5)/5;
-    const frame=starryPaintedFrame(s,lane);
-    tuftSpots.push({x:frame.x,y:starrySurfaceY(frame.x,s)+h*.5,z:frame.z,h,color:tuftColors[i%tuftColors.length]});
-  }
-  const tufts=new THREE.InstancedMesh(tuftGeo,tuftMat,tuftSpots.length);tufts.name='Meadow tufts';
-  tuftSpots.forEach((spot,i)=>{dummy.position.set(spot.x,spot.y,spot.z);dummy.scale.set(.55,spot.h,.55);dummy.rotation.y=i;dummy.updateMatrix();tufts.setMatrixAt(i,dummy.matrix);tufts.setColorAt(i,spot.color);});
-  tufts.instanceColor.needsUpdate=true;group.add(tufts);
-  const stoneColors=['#e07a62','#f0c14a','#f2a3b8','#8ea4b8','#d9d3c7','#7faf9a','#e6b07a','#c46b58'];
-  const stoneSpots=[],wallTops=[];
-  for(let s=STARRY.revealEnd+2;s<=STARRY.releaseStart-2;s+=.34)for(const side of [-1,1]){
-    const crest=.28+.24*(.5+.5*Math.sin(s*.085+side*1.7));
-    wallTops.push(crest);
-    const courses=1+Math.floor(crest/.22);
-    for(let course=0;course<courses;course++){
-      const lane=side*(half+.72+course*.06+(rand()-.5)*.04);
-      const frame=starryPaintedFrame(s+(course%2)*.16,lane);
-      const radius=.2+.04*rand();
-      stoneSpots.push({x:frame.x,y:Math.max(heightAt(s),groundAt(frame.x,s))+.08+course*.16,z:frame.z,r:.16,sx:.46,sy:.16,sz:.32,s,lane,color:stoneColors[(course+Math.floor(s))%stoneColors.length]});
+  const plantColors=['#d7b7c2','#e6d7a4','#c9b7d4','#8eaa78','#f0e2c8','#7f9a6c'].map(c=>new THREE.Color(c));
+  const tuftSpots=[],bloomSpots=[];
+  for(let s=STARRY.split+10;s<=STARRY.releaseEnd-8;s+=2.8){
+    const open=Math.sin(s*.11)+Math.sin(s*.027*3);
+    if(open>.85)continue;
+    for(const side of [-1,1]){
+      if(rand()>.72)continue;
+      const lane=side*(half+1.25+rand()*3.6);
+      const frame=starryPaintedFrame(s+(rand()-.5)*2.4,lane);
+      const h=.28+.45*rand();
+      const spot={x:frame.x,y:starrySurfaceY(frame.x,s)+h*.45,z:frame.z,h,s,lane,color:plantColors[Math.floor(rand()*plantColors.length)]};
+      if(rand()>.62)bloomSpots.push({...spot,h:.35+.7*rand()});
+      else tuftSpots.push(spot);
     }
   }
-  const stoneGeo=keep(new THREE.BoxGeometry(1,1,1));
-  const stones=new THREE.InstancedMesh(stoneGeo,stoneMat,stoneSpots.length);stones.name='Colored pebble wall';
-  stoneSpots.forEach((spot,i)=>{dummy.position.set(spot.x,spot.y,spot.z);dummy.scale.set(spot.sx,spot.sy,spot.sz);dummy.rotation.set(0,spot.s*.3,0);dummy.updateMatrix();stones.setMatrixAt(i,dummy.matrix);stones.setColorAt(i,tint.set(spot.color));});
-  stones.instanceColor.needsUpdate=true;group.add(stones);
+  const tufts=new THREE.InstancedMesh(tuftGeo,tuftMat,Math.max(1,tuftSpots.length));tufts.name='Fantasy grasses';
+  tuftSpots.forEach((spot,i)=>{dummy.position.set(spot.x,spot.y,spot.z);dummy.scale.set(.45+spot.h,spot.h,.45+spot.h);dummy.rotation.y=i;dummy.updateMatrix();tufts.setMatrixAt(i,dummy.matrix);tufts.setColorAt(i,spot.color);});
+  if(tuftSpots.length)tufts.instanceColor.needsUpdate=true;group.add(tufts);
+  const bloomGeo=keep(new THREE.SphereGeometry(.5,8,6));
+  const blooms=new THREE.InstancedMesh(bloomGeo,bloomMat,Math.max(1,bloomSpots.length));blooms.name='Fantasy blooms';
+  bloomSpots.forEach((spot,i)=>{dummy.position.set(spot.x,spot.y+spot.h*.2,spot.z);dummy.scale.set(spot.h,spot.h*.7,spot.h);dummy.updateMatrix();blooms.setMatrixAt(i,dummy.matrix);blooms.setColorAt(i,spot.color);});
+  if(bloomSpots.length)blooms.instanceColor.needsUpdate=true;group.add(blooms);
   const village=new THREE.Group();village.name='Painted cottages';group.add(village);
   const houseWalls=[],houses=[];
   const plans=[
-    {s:4688,side:1,homes:[[5.2,4,1],[6.6,-6,.85],[5.8,12,.75],[7.4,8,.7]]},
-    {s:4668,side:-1,homes:[[5.0,-4,1],[6.8,3,.85],[5.7,10,.7]]},
-    {s:4748,side:1,homes:[[4.9,0,1.05],[6.6,7,.8],[7.8,-6,.7]]},
-    {s:4588,side:-1,homes:[[5.1,2,.95],[6.9,-5,.75]]},
+    {s:4518,side:-1,homes:[[4.6,2,.9],[6.1,9,.75]]},
+    {s:4566,side:-1,homes:[[5.3,-4,.8]]},
   ];
   const palette=['#e39a62','#f0c24a','#e7a0b0','#8f9eb0','#d98a6a','#e6b07a'];
   function cottage(s,lane,scale){
@@ -357,11 +359,8 @@ export function createStarryWorld(scene){
     mesh.position.set((a[0]+b[0])*.5,(a[1]+b[1])*.5,(a[2]+b[2])*.5);
     mesh.scale.set(r,len,r);mesh.quaternion.setFromUnitVectors(up,dir.multiplyScalar(1/len));parent.add(mesh);
   }
-  for(let i=0;i<14;i++){
-    const s=STARRY.revealEnd+12+(STARRY.releaseStart-STARRY.revealEnd-24)*(i/13);
-    const side=i%2?-1:1;
-    if(houses.some(home=>Math.abs(home.s-s)<4.5&&Math.sign(home.lane)===side))continue;
-    const lane=side*(3.7+rand()*1.1),frame=starryPaintedFrame(s,lane),h=2.8+rand()*1.6;
+  function growTree(s,side,lane,h){
+    const frame=starryPaintedFrame(s,lane);
     const tree=new THREE.Group();tree.position.set(frame.x,heightAt(s),frame.z);
     const fork=h*.58,crown=h*.95;
     limb(tree,[0,0,0],[0,fork,0],.055,trunkMat);
@@ -372,8 +371,27 @@ export function createStarryWorld(scene){
     limb(tree,[-side*.7,crown,.22],[-side*.45,h*1.2,-.08],.02,twigMat);
     limb(tree,[side*.75,crown-.02,-.16],[side*1.15,h*1.1,-.3],.02,twigMat);
     limb(tree,[side*.75,crown-.02,-.16],[side*.5,h*1.22,.1],.018,twigMat);
-    trees.add(tree);treeSpots.push({s,lane,x:frame.x,z:frame.z,branches:6});
+    trees.add(tree);treeSpots.push({s,lane,x:frame.x,z:frame.z,branches:6,replaced:s<4425});
   }
+  growTree(4394,-1,-4.2,3.4);growTree(4412,-1,-5.1,4.1);
+  for(let i=0;i<12;i++){
+    const s=STARRY.split+36+(STARRY.releaseStart-STARRY.split-70)*(i/11);
+    const side=i%2?-1:1;
+    if(houses.some(home=>Math.abs(home.s-s)<4.5&&Math.sign(home.lane)===side))continue;
+    const lane=side*(3.6+rand()*2.1),h=2.4+rand()*2.4;
+    growTree(s,side,lane,h);
+  }
+  const signAt=STARRY.split+24,signBranch=starryBranchCenter(signAt);
+  const signFrame=starryRoadFrame(signAt,signBranch-half-.85);
+  const sign=new THREE.Group();sign.name='画家村路牌';
+  const signMap=canvasTexture(paintSign,512,336);
+  const signBoard=new THREE.Mesh(keep(new THREE.PlaneGeometry(1.9,1.24)),track(new THREE.MeshBasicMaterial({color:signMap?'#ffffff':'#f3ead8',map:signMap,side:THREE.DoubleSide})));
+  signBoard.name='Painter village sign';signBoard.position.y=1.45;
+  const signPost=new THREE.Mesh(trunkGeo,trunkMat);signPost.scale.set(.1,1.7,.1);signPost.position.y=.85;
+  const signArrow=new THREE.Mesh(keep(new THREE.ConeGeometry(.18,.5,4)),trunkMat);signArrow.rotation.z=Math.PI/2;signArrow.position.set(-1.15,1.45,0);
+  sign.add(signPost,signBoard,signArrow);
+  sign.position.set(signFrame.x,starrySurfaceY(signFrame.x,signFrame.s),signFrame.z);
+  sign.rotation.y=signFrame.yaw;group.add(sign);
   const skyRig=new THREE.Group();skyRig.name='Starry sky rig';group.add(skyRig);
   const domeMat=track(new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.BackSide,fog:false,transparent:true,depthWrite:false}));
   const dome=new THREE.Mesh(keep(duskDome(150)),domeMat);dome.name='Dusk sky';skyRig.add(dome);
@@ -389,20 +407,18 @@ export function createStarryWorld(scene){
   skyRig.add(stars);
   const moon=new THREE.Mesh(keep(new THREE.SphereGeometry(2.4,20,16)),track(new THREE.MeshBasicMaterial({color:STARRY_LIGHT.moon,fog:false,transparent:true,depthWrite:false})));
   moon.name='Dusk moon';moon.position.set(-18,14,-48);skyRig.add(moon);
-  const villageMaterials=[vergeMat,tuftMat,stoneMat,...houseWalls,roofMat,trimMat,windowMat,doorMat,trunkMat,twigMat];
-  const villageObjects=[verge,tufts,stones,village,trees];
-  group.userData.samples={stones:stoneSpots,houses,trees:treeSpots,texture:'dusk-gradient-sky',roadHalf:half,wallTops,clusters:plans.length,moon:{x:-18,y:14,z:-48}};
+  group.userData.samples={houses,trees:treeSpots,plants:tuftSpots.concat(bloomSpots),texture:'dusk-gradient-sky',roadHalf:half,clusters:plans.length,sign:{title:STARRY_SIGN.title,subtitle:STARRY_SIGN.subtitle,note:STARRY_SIGN.note,s:signAt},moon:{x:-18,y:14,z:-48},walls:0};
   group.visible=false;
-  return {group,road,dome,moon,stars,update(view,anchor,chunks){
-    const show=view.connect>.002||view.distant>.002||view.village>.002;
-    group.visible=show;
-    applyFade([roadMat],[road],Math.max(view.connect,view.village));
-    applyFade(villageMaterials,villageObjects,view.village);
-    const skyOn=view.distant>.002;
+  return {group,road,dome,moon,stars,sign,update(view,anchor,chunks){
+    const s=anchor?.s??0,near=s>STARRY.sight-90&&s<STARRY.end+30;
+    group.visible=near;
+    road.visible=verge.visible=tufts.visible=blooms.visible=village.visible=trees.visible=sign.visible=near;
+    roadMat.opacity=vergeMat.opacity=1;roadMat.transparent=vergeMat.transparent=false;roadMat.depthWrite=vergeMat.depthWrite=true;
+    const skyOn=view.distant>.02&&near;
     dome.visible=stars.visible=moon.visible=skyOn;
     domeMat.opacity=view.distant;starMat.opacity=view.distant*.22;moon.material.opacity=view.distant*.82;
     if(anchor){
-      const frame=starryPaintedFrame(anchor.s,0);
+      const frame=starryRoadFrame(s,0);
       skyRig.position.set(frame.x,anchor.y,frame.z);
       skyRig.rotation.y=Math.atan2(-frame.fx,-frame.fz);
     }
